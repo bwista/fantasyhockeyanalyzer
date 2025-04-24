@@ -13,6 +13,10 @@ SWID = '{EC3394CD-9286-4EBB-BFF0-BE0BDFBCB79F}' # Replace with your SWID Cookie
 ESPN_S2 = 'AEBS5WA%2Bo11dLS2wzax2UxfLN3h9JTqNsqBtLbR%2BIEQXSBfIKZvcoiwCmKH2DjQb2jcwP3bYydJYQH9up9sJERKnvikLlsCGHnTtEtkVf49epcUZLaOSUmhCgoZwthxSORcY2TFbVvcf4hu3K9rHmk454ADEUr%2BUarxBYh725lOGgjlzQZ97qYHM139NkD%2FnzSU4QmwWBYLiVLIX8ImweEzFP2Knx5z0auEzL3F6jcsdmWKBzX7mFqt6hs4PtYpDUHhnGX88UKI3I1QSazxxkKMLXnhZ5HulnlEd7ZZTYF8r%2BQ%3D%3D' # Replace with your ESPN_S2 Cookie
 # --- END USER CONFIGURATION ---
 
+# --- SCRIPT CONFIGURATION ---
+OUTPUT_FILE = 'src/data/draft_results.csv' # Output file path (relative to project root where script is run)
+# --- END SCRIPT CONFIGURATION
+
 def parse_draft_results(league_id=LEAGUE_ID, year=YEAR, swid=SWID, espn_s2=ESPN_S2):
     """
     Fetches draft results for a given ESPN fantasy hockey league season using the ESPN API.
@@ -87,7 +91,7 @@ if __name__ == "__main__":
     
     if draft_results is not None:
         # Save to CSV
-        draft_results.to_csv('../../draft_results.csv', index=False)
+        draft_results.to_csv(OUTPUT_FILE, index=False)
         
         # Display first few rows
         print("\nFirst few picks:")
