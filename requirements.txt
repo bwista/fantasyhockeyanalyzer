@@ -2,4 +2,6 @@ requests>=2.32.0
 numpy>=1.26.0
 pandas>=2.2.0
 matplotlib>=3.8.0
-python-dotenv>=1.0.0 
+python-dotenv>=1.0.0
+espn-api>=0.44.1
+streamlit>=1.44.1
