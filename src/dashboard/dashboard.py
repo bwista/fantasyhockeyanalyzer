@@ -5,7 +5,6 @@ import pandas as pd
 DRAFT_RESULTS_FILE = 'src/data/draft_results.csv' # Updated path
 PLAYER_STATS_FILE = 'src/data/box_score_stats.json' # Updated path and extension
 POINTS_COLUMN = 'TotalPoints' # Actual points column name after aggregation
-STATS_RAW_POINTS_COLUMN = 'total_points' # Column name in the raw JSON stats file
 N_PICKS_DISPLAY = 10 # Number of best/worst picks to show
 
 # --- Helper Functions ---
@@ -13,7 +12,9 @@ def load_data(draft_file, stats_file):
     """Loads draft results (CSV) and player stats (JSON) from files."""
     try:
         draft_df = pd.read_csv(draft_file)
-        st.success(f"Loaded draft data from {draft_file}")
+        # Add Overall Pick number (index + 1)
+        draft_df['Overall Pick'] = draft_df.index + 1
+        st.success(f"Loaded draft data from {draft_file} and added 'Overall Pick' column.")
     except FileNotFoundError:
         st.error(f"Error: Draft results file not found at {draft_file}. Please ensure it exists.") # Updated error message
         return None, None
@@ -57,8 +58,8 @@ def calculate_value(merged_df, points_col):
     # Using 'dense' ranking: players with same points get same rank, next rank is incremented
     merged_df['PointsRank'] = merged_df[points_col].rank(method='dense', ascending=False)
 
-    # Draft Rank is simply the pick number
-    merged_df['DraftRank'] = merged_df['Pick'] # Assuming 'Pick' column exists from draft_results
+    # Draft Rank is the overall pick number
+    merged_df['DraftRank'] = merged_df['Overall Pick'] # Use the new 'Overall Pick' column
 
     # Calculate Value Score (Higher score = better value)
     # Player drafted later (high DraftRank) but ranked high in points (low PointsRank) gets high score
@@ -83,23 +84,23 @@ if draft_df is not None:
     if stats_df is not None:
         try:
             # Aggregate weekly stats to get total points per player
-            if STATS_RAW_POINTS_COLUMN in stats_df.columns and 'Player' in stats_df.columns:
-                st.info(f"Aggregating player stats by summing '{STATS_RAW_POINTS_COLUMN}'...")
+            if 'total_points' in stats_df.columns and 'name' in stats_df.columns:
+                st.info(f"Aggregating player stats by summing '{'total_points'}'...")
                 # Group by Player and sum the raw points column
-                aggregated_stats = stats_df.groupby('Player')[STATS_RAW_POINTS_COLUMN].sum().reset_index()
+                aggregated_stats = stats_df.groupby('name')['total_points'].sum().reset_index()
                 # Rename the summed column to the final POINTS_COLUMN name
-                aggregated_stats = aggregated_stats.rename(columns={STATS_RAW_POINTS_COLUMN: POINTS_COLUMN})
+                aggregated_stats = aggregated_stats.rename(columns={'total_points': POINTS_COLUMN})
                 st.success("Player stats aggregated successfully.")
 
                 # Use left merge to keep all drafted players, even if they lack stats
-                merged_df = pd.merge(draft_df, aggregated_stats, on='Player', how='left')
+                merged_df = pd.merge(draft_df, aggregated_stats, left_on='Player', right_on='name', how='left')
                 st.success("Successfully merged draft data and aggregated player stats.")
 
                 # Fill NaN for the points column resulting from the left merge (drafted players with no stats)
                 # Other stat columns are not present anymore after aggregation
                 merged_df[POINTS_COLUMN] = merged_df[POINTS_COLUMN].fillna(0)
             else:
-                st.error(f"Required columns ('Player', '{STATS_RAW_POINTS_COLUMN}') not found in stats data. Cannot aggregate.")
+                st.error(f"Required columns ('Player', '{'total_points'}') not found in stats data. Cannot aggregate.")
                 merged_df = draft_df # Fallback to just draft data
                 merged_df[POINTS_COLUMN] = 0 # Add dummy points column
 
@@ -123,11 +124,11 @@ if draft_df is not None:
         with col1:
             st.subheader(f"Top {N_PICKS_DISPLAY} Best Value Picks")
             # Select relevant columns for display
-            best_value_cols = ['Pick', 'Player', 'Team', POINTS_COLUMN, 'PointsRank', 'ValueScore'] # Use actual points column
-            st.dataframe(value_df.head(N_PICKS_DISPLAY)[best_value_cols], use_container_width=True)
+            best_value_cols = ['Overall Pick', 'Player', 'Team', POINTS_COLUMN, 'PointsRank', 'ValueScore'] # Use 'Overall Pick'
+            st.dataframe(value_df.head(N_PICKS_DISPLAY)[best_value_cols], use_container_width=True, hide_index=True) # Hide index
         with col2:
             st.subheader(f"Top {N_PICKS_DISPLAY} Worst Value Picks")
-            st.dataframe(value_df.tail(N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[best_value_cols], use_container_width=True) # Use actual points column
+            st.dataframe(value_df.tail(N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[best_value_cols], use_container_width=True, hide_index=True) # Hide index
 
         # Display Per-Team Analysis
         st.header("Team-Specific Draft Value Analysis")
@@ -141,25 +142,25 @@ if draft_df is not None:
             col3, col4 = st.columns(2)
             with col3:
                 st.markdown(f"**Top {N_PICKS_DISPLAY} Best Value Picks**")
-                st.dataframe(team_df.head(N_PICKS_DISPLAY)[best_value_cols], use_container_width=True)
+                st.dataframe(team_df.head(N_PICKS_DISPLAY)[best_value_cols], use_container_width=True, hide_index=True) # Hide index
             with col4:
                 st.markdown(f"**Top {N_PICKS_DISPLAY} Worst Value Picks**")
-                st.dataframe(team_df.tail(N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[best_value_cols], use_container_width=True)
+                st.dataframe(team_df.tail(N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[best_value_cols], use_container_width=True, hide_index=True) # Hide index
 
         # Display Full Data (Optional)
         st.header("Full Draft Data with Value Calculation")
         with st.expander("Show Full Data Table"):
             # Select and reorder columns for the full table display
             # Note: Only aggregated points are available now, not detailed weekly stats
-            all_cols_ordered = ['Pick', 'Round', 'Team', 'Player', POINTS_COLUMN, 'ValueScore', 'PointsRank', 'DraftRank'] + \
-                               [col for col in value_df.columns if col not in ['Pick', 'Round', 'Team', 'Player', POINTS_COLUMN, 'ValueScore', 'PointsRank', 'DraftRank']]
-            st.dataframe(value_df[all_cols_ordered], use_container_width=True) # Use actual points column
+            all_cols_ordered = ['Overall Pick', 'Round', 'Team', 'Player', POINTS_COLUMN, 'ValueScore', 'PointsRank', 'DraftRank'] + \
+                               [col for col in value_df.columns if col not in ['Overall Pick', 'Round', 'Team', 'Player', POINTS_COLUMN, 'ValueScore', 'PointsRank', 'DraftRank']] # Use 'Overall Pick'
+            st.dataframe(value_df[all_cols_ordered], use_container_width=True, hide_index=True) # Hide index
 
     else:
         st.warning("Could not calculate value scores.")
         # Optionally display just the merged data without value scores
         st.header("Merged Draft and Stats Data")
-        st.dataframe(merged_df)
+        st.dataframe(merged_df, hide_index=True) # Hide index
 
 else:
     st.warning("Draft data could not be loaded. Cannot display dashboard.")
