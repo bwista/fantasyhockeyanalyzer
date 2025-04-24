@@ -15,7 +15,7 @@ ESPN_S2 = 'AEBS5WA%2Bo11dLS2wzax2UxfLN3h9JTqNsqBtLbR%2BIEQXSBfIKZvcoiwCmKH2DjQb2
 # --- END USER CONFIGURATION ---
 
 # --- SCRIPT CONFIGURATION ---
-OUTPUT_FILE = 'box_score_stats.json' # Output file path (relative to project root where script is run)
+OUTPUT_FILE = 'src/data/box_score_stats.json' # Output file path (relative to project root where script is run)
 START_WEEK = 1 # Week to start fetching data from
 END_WEEK = None # Set to None to fetch up to the current week, or specify an end week number
 RATE_LIMIT_DELAY = 2 # Seconds to wait between fetching weeks to avoid rate limiting
@@ -69,10 +69,15 @@ def fetch_box_score_stats(league_id, year, swid, espn_s2, start_week, end_week, 
 
             for box in box_scores:
                 logging.debug(f"Processing box score: {box.home_team.team_name} vs {box.away_team.team_name}")
-                for player in box.home_lineup + box.away_lineup:
+                # Extract team abbreviations directly from the box score object
+                home_team_abbrev = box.home_team.team_abbrev
+                away_team_abbrev = box.away_team.team_abbrev
+
+                # Process home team lineup
+                for player in box.home_lineup:
                     player_data = {
                         'week': week,
-                        'team_id': player.owner_team.team_id if hasattr(player, 'owner_team') else None, # Get team ID if available
+                        'team_abbrev': home_team_abbrev, # Assign home team abbreviation
                         'player_id': player.playerId,
                         'name': player.name,
                         'position': player.position,
@@ -98,12 +103,51 @@ def fetch_box_score_stats(league_id, year, swid, espn_s2, start_week, end_week, 
 
                         if raw_stats and isinstance(raw_stats, dict):
                             player_data['stats'] = raw_stats
-                            logging.debug(f"Extracted stats for {player.name} in week {week}")
+                            logging.debug(f"Extracted stats for {player.name} (Team: {home_team_abbrev}) in week {week}")
                         else:
-                             logging.warning(f"Could not find expected 'total' stats structure for player {player.name} (ID: {player.playerId}) in week {week}. Stats dict will be empty.")
+                             logging.warning(f"Could not find expected 'total' stats structure for player {player.name} (ID: {player.playerId}, Team: {home_team_abbrev}) in week {week}. Stats dict will be empty.")
 
                     except Exception as e:
-                        logging.error(f"Error extracting raw stats for player {player.name} (ID: {player.playerId}) in week {week}: {e}")
+                        logging.error(f"Error extracting raw stats for player {player.name} (ID: {player.playerId}, Team: {home_team_abbrev}) in week {week}: {e}")
+
+                    all_box_score_stats.append(player_data)
+
+                # Process away team lineup
+                for player in box.away_lineup:
+                    player_data = {
+                        'week': week,
+                        'team_abbrev': away_team_abbrev, # Assign away team abbreviation
+                        'player_id': player.playerId,
+                        'name': player.name,
+                        'position': player.position,
+                        'slot_position': player.slot_position,
+                        'pro_opponent': player.pro_opponent,
+                        'game_played': player.game_played,
+                        'total_points': player.points,
+                        'points_breakdown': player.points_breakdown,
+                        'stats': {} # Initialize stats dict
+                    }
+
+                    # Extract raw stats - structure might vary, attempt common path
+                    try:
+                        # The example showed stats under '05null', let's try that first
+                        # It might also be directly under 'total' for some stat views
+                        raw_stats = None
+                        if hasattr(player, 'stats') and isinstance(player.stats, dict):
+                            if '05null' in player.stats and isinstance(player.stats['05null'], dict) and 'total' in player.stats['05null']:
+                                raw_stats = player.stats['05null']['total']
+                            elif 'total' in player.stats: # Fallback if '05null' isn't present
+                                raw_stats = player.stats['total']
+                            # Add more potential paths if needed based on API variations
+
+                        if raw_stats and isinstance(raw_stats, dict):
+                            player_data['stats'] = raw_stats
+                            logging.debug(f"Extracted stats for {player.name} (Team: {away_team_abbrev}) in week {week}")
+                        else:
+                             logging.warning(f"Could not find expected 'total' stats structure for player {player.name} (ID: {player.playerId}, Team: {away_team_abbrev}) in week {week}. Stats dict will be empty.")
+
+                    except Exception as e:
+                        logging.error(f"Error extracting raw stats for player {player.name} (ID: {player.playerId}, Team: {away_team_abbrev}) in week {week}: {e}")
 
                     all_box_score_stats.append(player_data)
 
@@ -126,10 +170,10 @@ if __name__ == "__main__":
 
     if box_stats:
         try:
-            logging.info(f"Attempting to save data to project root: {OUTPUT_FILE}...")
+            logging.info(f"Attempting to save data to: {OUTPUT_FILE}...")
             with open(OUTPUT_FILE, 'w') as f:
                 json.dump(box_stats, f, indent=4)
-            logging.info(f"Box score stats saved successfully to project root: {OUTPUT_FILE}")
+            logging.info(f"Box score stats saved successfully to: {OUTPUT_FILE}")
             print(f"\nBox score stats saved to {OUTPUT_FILE}")
             print(f"Total player-game entries saved: {len(box_stats)}")
         except Exception as e:
