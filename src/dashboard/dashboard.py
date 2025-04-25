@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import json # Added for team mapping
 import time # Added for temporary messages
+import plotly.express as px # Added for plotting
+import numpy as np # Added for trendline calculation
+import statsmodels.api as sm # Added for OLS trendline calculation
 
 # --- Configuration ---
 DRAFT_RESULTS_FILE = 'src/data/draft_results.csv' # Updated path
@@ -252,11 +255,72 @@ if draft_df is not None:
     if value_df is not None:
         st.header("Draft Analysis Results")
 
-        # --- Removed Sidebar Filter ---
-        # The filtering logic based on selected_statuses is removed.
-        # We will now use value_df directly for display.
+        # --- Scatter Plot: Overall Pick vs Points Rank ---
+        st.subheader("Overall Pick vs. Fantasy Points Rank")
 
-        # Display Overall Analysis (using original value_df)
+        # Use the full dataset for the plot initially (filtering via legend)
+        plot_df = value_df
+
+        # --- Calculate Trendline on ALL data ---
+        trendline_results = None
+        trendline_x = None
+        trendline_y_pred = None
+        if not value_df.empty and 'Overall Pick' in value_df.columns and 'PointsRank' in value_df.columns:
+            # Prepare data for OLS (handle potential NaNs just in case)
+            ols_data = value_df[['Overall Pick', 'PointsRank']].dropna()
+            if not ols_data.empty:
+                X = ols_data['Overall Pick']
+                y = ols_data['PointsRank']
+                X_with_const = sm.add_constant(X)
+                model = sm.OLS(y, X_with_const)
+                trendline_results = model.fit()
+                # Generate points for the trendline trace spanning the x-axis
+                trendline_x = np.linspace(X.min(), X.max(), 100)
+                trendline_x_with_const = sm.add_constant(trendline_x)
+                trendline_y_pred = trendline_results.predict(trendline_x_with_const)
+
+        # --- Generate Plot ---
+        if not plot_df.empty:
+            # Determine axis limits (based on full dataset for consistency)
+            max_pick = value_df['Overall Pick'].max() if not value_df.empty else 160
+            max_rank = value_df['PointsRank'].max() if not value_df.empty else 160
+            axis_limit = max(max_pick, max_rank) * 1.2
+
+            # Create scatter plot WITHOUT automatic trendline
+            fig = px.scatter(
+                plot_df, # Use filtered data for points
+                x='Overall Pick',
+                y='PointsRank',
+                color='Team',
+                hover_data=['Player', 'Overall Pick', 'PointsRank', 'Team', POINTS_COLUMN, 'ValueScore'],
+                title=f"Overall Pick vs. Points Rank",
+                trendline=None, # Trendline will be added manually
+                color_discrete_sequence=px.colors.qualitative.Bold
+            )
+
+            # Add the pre-calculated "All Teams" trendline if available
+            if trendline_x is not None and trendline_y_pred is not None:
+                import plotly.graph_objects as go # Import needed for go.Scatter
+                fig.add_trace(go.Scatter(
+                    x=trendline_x,
+                    y=trendline_y_pred,
+                    mode='lines',
+                    name='Overall Trend (All Teams)',
+                    line=dict(color='rgba(255,255,255,0.6)', dash='dash') # Style the trendline
+                ))
+
+            # Update layout: Set fixed axes, invert Y axis
+            fig.update_layout(
+                xaxis_title="Overall Pick",
+                yaxis_title="Points Rank (Lower is Better)",
+                xaxis_range=[0, axis_limit],
+                yaxis_range=[axis_limit, 0], # Inverted Y axis with fixed limit
+                yaxis_autorange=False, # Disable autorange for Y
+                xaxis_autorange=False  # Disable autorange for X
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        # --- Overall Value Tables ---
         st.subheader("Overall Draft Value Analysis")
         col1, col2 = st.columns(2)
         # Define columns for concise display tables (Removed status columns)
