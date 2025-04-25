@@ -246,8 +246,6 @@ if draft_df is not None:
 
 
     # --- Calculate Value ---
-    # Value is now calculated based on points scored ONLY for the drafting team
-    st.markdown(f"--- \n *Value calculations based on **{POINTS_COLUMN}** (Points scored for Drafting Team only).*")
     # Pass the fully processed DataFrame to calculate_value
     value_df = calculate_value(processed_df.copy(), POINTS_COLUMN) # Use processed_df
 
@@ -293,7 +291,6 @@ if draft_df is not None:
                 y='PointsRank',
                 color='Team',
                 hover_data=['Player', 'Overall Pick', 'PointsRank', 'Team', POINTS_COLUMN, 'ValueScore'],
-                title=f"Overall Pick vs. Points Rank",
                 trendline=None, # Trendline will be added manually
                 color_discrete_sequence=px.colors.qualitative.Bold
             )
