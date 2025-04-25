@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import json # Added for team mapping
+import time # Added for temporary messages
 
 # --- Configuration ---
 DRAFT_RESULTS_FILE = 'src/data/draft_results.csv' # Updated path
@@ -10,6 +11,18 @@ POINTS_COLUMN = 'TotalPoints' # Actual points column name after aggregation
 N_PICKS_DISPLAY = 10 # Number of best/worst picks to show
 
 # --- Helper Functions ---
+def show_temporary_message(message_type, content, duration):
+    """Displays a Streamlit message (info, success, etc.) for a specified duration."""
+    placeholder = st.empty()
+    message_func = getattr(placeholder, message_type, None)
+    if message_func:
+        message_func(content)
+        time.sleep(duration)
+        placeholder.empty()
+    else:
+        # Fallback or error handling if message_type is invalid
+        st.error(f"Invalid message type: {message_type}")
+
 def load_data(draft_file, stats_file, mapping_file):
     """Loads draft results (CSV), player stats (JSON), and team mapping (JSON) from files."""
     draft_df, stats_df, team_map = None, None, None # Initialize
@@ -18,7 +31,7 @@ def load_data(draft_file, stats_file, mapping_file):
     try:
         draft_df = pd.read_csv(draft_file)
         draft_df['Overall Pick'] = draft_df.index + 1 # Add Overall Pick number
-        st.success(f"Loaded draft data from {draft_file} and added 'Overall Pick'.")
+        show_temporary_message("success", f"Loaded draft data from {draft_file} and added 'Overall Pick'.", 0.25)
     except FileNotFoundError:
         st.error(f"Error: Draft results file not found at {draft_file}.")
         # Allow proceeding without draft data if other files load? For now, let's require it.
@@ -30,7 +43,7 @@ def load_data(draft_file, stats_file, mapping_file):
     # --- Load Stats Data ---
     try:
         stats_df = pd.read_json(stats_file)
-        st.success(f"Loaded player stats from {stats_file}")
+        show_temporary_message("success", f"Loaded player stats from {stats_file}", 0.25)
     except FileNotFoundError:
         st.warning(f"Warning: Player stats file not found at {stats_file}. Proceeding without player stats.")
         # Don't return yet, try loading mapping
@@ -45,7 +58,7 @@ def load_data(draft_file, stats_file, mapping_file):
     try:
         with open(mapping_file, 'r') as f:
             team_map = json.load(f)
-        st.success(f"Loaded team mapping from {mapping_file}")
+        show_temporary_message("success", f"Loaded team mapping from {mapping_file}", 0.25)
     except FileNotFoundError:
         st.warning(f"Warning: Team mapping file not found at {mapping_file}. Cannot map draft team names to abbreviations.")
         # Proceed without mapping if it's missing
@@ -110,26 +123,26 @@ if draft_df is not None:
 
     # 1. Add Drafting Team Abbreviation using Mapping (Needed before filtering stats)
     if team_map is not None:
-        st.info("Mapping drafting team names to abbreviations...")
+        show_temporary_message("info", "Mapping drafting team names to abbreviations...", 0.25)
         processed_df['DraftingTeamAbbrev'] = processed_df['Team'].map(team_map).fillna('UNKNOWN')
         # Check if any mappings failed
         if 'UNKNOWN' in processed_df['DraftingTeamAbbrev'].unique():
             st.warning("Some drafting team names could not be mapped to abbreviations. Check team_mapping.json.")
         else:
-            st.success("Added drafting team abbreviations.")
+            show_temporary_message("success", "Added drafting team abbreviations.", 0.25)
     else:
         st.warning("Team mapping file not found or invalid. Cannot determine drafting team abbreviations.")
         # DraftingTeamAbbrev remains 'N/A'
 
     # 2. Process Stats (Filter by Drafting Team, Aggregate Points, Find Last Team)
     if stats_df is not None and not stats_df.empty:
-        st.info("Processing player stats...")
+        show_temporary_message("info", "Processing player stats...", 0.25)
         try:
             # Create a lookup map for player -> drafting abbrev
             # Ensure 'Player' column exists and handle potential errors if it doesn't
             if 'Player' in processed_df.columns and 'DraftingTeamAbbrev' in processed_df.columns:
                  player_to_draft_abbrev = processed_df.set_index('Player')['DraftingTeamAbbrev'].to_dict()
-                 st.success("Created player-to-drafting-team lookup.")
+                 show_temporary_message("success", "Created player-to-drafting-team lookup.", 0.25)
             else:
                  st.error("Critical columns ('Player', 'DraftingTeamAbbrev') missing in processed_df. Cannot proceed with stats filtering.")
                  player_to_draft_abbrev = {} # Empty dict to prevent further errors
@@ -137,7 +150,7 @@ if draft_df is not None:
 
             # Filter stats_df to only include points scored for the drafting team
             if player_to_draft_abbrev and 'name' in stats_df.columns and 'team_abbrev' in stats_df.columns:
-                st.info("Filtering weekly stats for points scored with drafting team...")
+                show_temporary_message("info", "Filtering weekly stats for points scored with drafting team...", 0.25)
 
                 # Define filter condition
                 def is_drafting_team(row):
@@ -148,14 +161,14 @@ if draft_df is not None:
                     return draft_abbrev not in [None, 'N/A', 'UNKNOWN'] and week_abbrev == draft_abbrev
 
                 filtered_stats_df = stats_df[stats_df.apply(is_drafting_team, axis=1)].copy()
-                st.success(f"Filtered weekly stats. Kept {len(filtered_stats_df)} entries scored for drafting teams.")
+                show_temporary_message("success", f"Filtered weekly stats. Kept {len(filtered_stats_df)} entries scored for drafting teams.", 0.25)
 
                 # Aggregate points *from the filtered stats*
                 if not filtered_stats_df.empty and 'total_points' in filtered_stats_df.columns:
-                    st.info(f"Aggregating points scored for drafting team...")
+                    show_temporary_message("info", f"Aggregating points scored for drafting team...", 0.25)
                     aggregated_draft_team_stats = filtered_stats_df.groupby('name')['total_points'].sum().reset_index()
                     aggregated_draft_team_stats = aggregated_draft_team_stats.rename(columns={'total_points': POINTS_COLUMN})
-                    st.success("Aggregated points scored for drafting team.")
+                    show_temporary_message("success", "Aggregated points scored for drafting team.", 0.25)
 
                     # Merge these specific points into processed_df
                     # Use left merge to keep all drafted players, fill missing points with 0 later
@@ -165,7 +178,7 @@ if draft_df is not None:
                     # Drop the extra 'name' column from the merge
                     if 'name' in processed_df.columns and 'Player' in processed_df.columns:
                         processed_df = processed_df.drop(columns=['name'])
-                    st.success("Merged drafting team points.")
+                    show_temporary_message("success", "Merged drafting team points.", 0.25)
                 else:
                     st.warning("No stats found matching drafting teams after filtering, or 'total_points' column missing. Points will be 0.")
                     # Ensure POINTS_COLUMN exists, even if it's all 0s (already initialized)
@@ -175,10 +188,10 @@ if draft_df is not None:
 
             # Determine Last Known Team Abbreviation (from original unfiltered stats_df)
             if 'week' in stats_df.columns and 'team_abbrev' in stats_df.columns and 'name' in stats_df.columns:
-                st.info("Determining last known team abbreviation (from all stats)...")
+                show_temporary_message("info", "Determining last known team abbreviation (from all stats)...", 0.25)
                 last_week_idx = stats_df.groupby('name')['week'].idxmax()
                 player_last_team = stats_df.loc[last_week_idx, ['name', 'team_abbrev']].rename(columns={'team_abbrev': 'LastTeamAbbrev'})
-                st.success("Determined last known team abbreviation per player.")
+                show_temporary_message("success", "Determined last known team abbreviation per player.", 0.25)
                 # Merge last team info
                 processed_df = pd.merge(processed_df.drop(columns=['LastTeamAbbrev'], errors='ignore'), # Drop initial None column
                                         player_last_team,
@@ -186,7 +199,7 @@ if draft_df is not None:
                 # Drop the extra 'name' column again
                 if 'name' in processed_df.columns and 'Player' in processed_df.columns:
                      processed_df = processed_df.drop(columns=['name'])
-                st.success("Merged last team abbreviations.")
+                show_temporary_message("success", "Merged last team abbreviations.", 0.25)
             else:
                  st.warning("Required columns missing in stats_df for determining last team. Skipping.")
                  # LastTeamAbbrev remains None
@@ -205,7 +218,7 @@ if draft_df is not None:
     # LastTeamAbbrev can remain NaN if player had no stats at all
 
     # 3. Determine Team Status (using DraftingTeamAbbrev and LastTeamAbbrev)
-    st.info("Determining player team status...")
+    show_temporary_message("info", "Determining player team status...", 0.25)
     def get_team_status(row):
         draft_abbrev = row['DraftingTeamAbbrev']
         last_abbrev = row['LastTeamAbbrev']
@@ -226,7 +239,7 @@ if draft_df is not None:
             return "Changed Team"
 
     processed_df['TeamStatus'] = processed_df.apply(get_team_status, axis=1)
-    st.success("Determined team status.")
+    show_temporary_message("success", "Determined team status.", 0.25)
 
 
     # --- Calculate Value ---
@@ -274,7 +287,7 @@ if draft_df is not None:
                      st.markdown(f"*Top {N_PICKS_DISPLAY} Worst Value Picks*")
                      st.dataframe(team_df.tail(N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols], use_container_width=True, hide_index=True)
         else:
-            st.info("No teams found in the data.") # Simplified message
+            show_temporary_message("info", "No teams found in the data.", 0.25) # Simplified message
 
 
         # Display Full Data (Optional, using original value_df)
