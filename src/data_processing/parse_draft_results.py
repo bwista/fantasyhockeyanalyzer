@@ -14,7 +14,7 @@ ESPN_S2 = 'AEBS5WA%2Bo11dLS2wzax2UxfLN3h9JTqNsqBtLbR%2BIEQXSBfIKZvcoiwCmKH2DjQb2
 # --- END USER CONFIGURATION ---
 
 # --- SCRIPT CONFIGURATION ---
-OUTPUT_FILE = 'src/data/draft_results.csv' # Output file path (relative to project root where script is run)
+OUTPUT_FILE = 'src/data/draft_results.json' # Output file path (relative to project root where script is run)
 # --- END SCRIPT CONFIGURATION
 
 def parse_draft_results(league_id=LEAGUE_ID, year=YEAR, swid=SWID, espn_s2=ESPN_S2):
@@ -28,7 +28,9 @@ def parse_draft_results(league_id=LEAGUE_ID, year=YEAR, swid=SWID, espn_s2=ESPN_
         espn_s2 (str): The ESPN_S2 cookie value.
 
     Returns:
-        pandas.DataFrame: DataFrame containing draft results with columns:
+        pandas.DataFrame: DataFrame containing draft results. The main script block
+            saves this data to a JSON file ('src/data/draft_results.json') with records orientation.
+            DataFrame columns:
             - Round: The draft round number
             - Pick: The pick number within the round
             - Team: The team name that made the pick
@@ -90,16 +92,17 @@ if __name__ == "__main__":
     draft_results = parse_draft_results()
     
     if draft_results is not None:
-        # Save to CSV
-        draft_results.to_csv(OUTPUT_FILE, index=False)
-        
-        # Display first few rows
-        print("\nFirst few picks:")
+        # Save to JSON
+        draft_results.to_json(OUTPUT_FILE, orient='records', indent=4)
+        logging.info(f"Draft results saved to {OUTPUT_FILE}")
+
+        # Display first few rows (optional, kept for consistency)
+        print("\nFirst few picks (DataFrame format):")
         print(draft_results.head())
-        
-        # Display summary
+
+        # Display summary (optional, kept for consistency)
         print(f"\nTotal picks: {len(draft_results)}")
         print("\nPicks by team:")
         print(draft_results['Team'].value_counts())
     else:
-        print("Error: Failed to fetch draft results.")
+        logging.error("Failed to fetch draft results. No output file created.")

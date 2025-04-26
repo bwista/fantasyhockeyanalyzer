@@ -7,7 +7,7 @@ import numpy as np # Added for trendline calculation
 import statsmodels.api as sm # Added for OLS trendline calculation
 
 # --- Configuration ---
-DRAFT_RESULTS_FILE = 'src/data/draft_results.csv' # Updated path
+DRAFT_RESULTS_FILE = 'src/data/draft_results.json' # Updated path for JSON
 PLAYER_STATS_FILE = 'src/data/box_score_stats.json' # Updated path and extension
 TEAM_MAPPING_FILE = 'src/data/team_mapping.json' # Added path for team name to abbreviation mapping
 POINTS_COLUMN = 'TotalPoints' # Actual points column name after aggregation
@@ -27,17 +27,21 @@ def show_temporary_message(message_type, content, duration):
         st.error(f"Invalid message type: {message_type}")
 
 def load_data(draft_file, stats_file, mapping_file):
-    """Loads draft results (CSV), player stats (JSON), and team mapping (JSON) from files."""
+    """Loads draft results (JSON), player stats (JSON), and team mapping (JSON) from files."""
     draft_df, stats_df, team_map = None, None, None # Initialize
 
     # --- Load Draft Data ---
     try:
-        draft_df = pd.read_csv(draft_file)
-        draft_df['Overall Pick'] = draft_df.index + 1 # Add Overall Pick number
-        show_temporary_message("success", f"Loaded draft data from {draft_file} and added 'Overall Pick'.", 0.25)
+        # Load from JSON instead of CSV
+        draft_df = pd.read_json(draft_file, orient='records')
+        # Calculate Overall Pick based on DataFrame index after loading
+        draft_df['Overall Pick'] = draft_df.index + 1
+        show_temporary_message("success", f"Loaded draft data from {draft_file} (JSON) and added 'Overall Pick'.", 0.25)
     except FileNotFoundError:
         st.error(f"Error: Draft results file not found at {draft_file}.")
-        # Allow proceeding without draft data if other files load? For now, let's require it.
+        return None, None, None
+    except ValueError as e: # Catch JSON parsing errors
+        st.error(f"Error parsing JSON draft file {draft_file}: {e}")
         return None, None, None
     except Exception as e:
         st.error(f"Error loading {draft_file}: {e}")
