@@ -5,8 +5,32 @@ import time # Added for temporary messages
 import plotly.express as px # Added for plotting
 import numpy as np # Added for trendline calculation
 import statsmodels.api as sm # Added for OLS trendline calculation
+import os # Added for file existence checks
+import logging # Added for consistency if data fetching logs
+import sys # Added to modify path
+
+# --- Path Setup ---
+# Ensure the project root directory (containing 'src') is in the Python path
+# This is necessary when running streamlit from the root directory like: streamlit run src/dashboard/dashboard.py
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..', '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+# Import data fetching functions and their constants if needed
+from src.data_processing.parse_draft_results import parse_draft_results
+# Import the function AND the constants needed for the call
+from src.data_processing.fetch_box_score_stats import fetch_box_score_stats, START_WEEK, END_WEEK, RATE_LIMIT_DELAY
+# Import the function AND the constants needed for the call
+from src.data_processing.fetch_team_info import fetch_and_save_team_info, OUTPUT_DIR as TEAM_INFO_OUTPUT_DIR, OUTPUT_FILE as TEAM_INFO_OUTPUT_FILE
+
+# Configure logging for dashboard (optional, but good practice)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 # --- Configuration ---
+# Define paths relative to project root (which is added to sys.path)
+CONFIG_FILE_PATH = 'user_config.json'
 DRAFT_RESULTS_FILE = 'src/data/draft_results.json' # Updated path for JSON
 PLAYER_STATS_FILE = 'src/data/box_score_stats.json' # Updated path and extension
 TEAM_MAPPING_FILE = 'src/data/team_mapping.json' # Added path for team name to abbreviation mapping
@@ -153,7 +177,149 @@ def determine_acquisition_type(group):
 st.set_page_config(layout="wide")
 st.title('🏒 Fantasy Hockey Draft & Acquisition Analysis') # Updated Title
 
-# Load Data
+# --- Load User Configuration ---
+st.subheader("Configuration")
+config = None
+try:
+    with open(CONFIG_FILE_PATH, 'r') as f:
+        config = json.load(f)
+    st.success(f"Loaded configuration from {CONFIG_FILE_PATH}")
+    # Optionally hide sensitive info in production
+    # with st.expander("View Configuration (Loaded)"):
+    #    st.json(config)
+except FileNotFoundError:
+    st.error(f"ERROR: Configuration file not found at {CONFIG_FILE_PATH}. Please create it.")
+    st.stop()
+except json.JSONDecodeError:
+    st.error(f"ERROR: Could not decode JSON from {CONFIG_FILE_PATH}. Please check its format.")
+    st.stop()
+except Exception as e:
+    st.error(f"ERROR: An unexpected error occurred loading {CONFIG_FILE_PATH}: {e}")
+    st.stop()
+
+# Extract essential config values
+league_id = config.get('LEAGUE_ID')
+year = config.get('YEAR')
+swid = config.get('SWID')
+espn_s2 = config.get('ESPN_S2')
+
+if not all([league_id, year, swid, espn_s2]):
+    st.error("ERROR: Configuration file is missing one or more required keys: LEAGUE_ID, YEAR, SWID, ESPN_S2.")
+    st.stop()
+
+
+# --- Data File Checks and Generation ---
+st.subheader("Data Loading & Preparation")
+
+# Ensure data directory exists (optional but good practice)
+DATA_DIR = 'src/data'
+if not os.path.exists(DATA_DIR):
+    try:
+        os.makedirs(DATA_DIR)
+        st.info(f"Created data directory: {DATA_DIR}")
+    except OSError as e:
+        st.error(f"Error creating data directory {DATA_DIR}: {e}")
+        st.stop() # Stop if we can't create the data directory
+
+# Check and generate Draft Results
+if not os.path.exists(DRAFT_RESULTS_FILE):
+    st.warning(f"Draft results file ({DRAFT_RESULTS_FILE}) not found. Attempting to generate...")
+    try:
+        # Call the function with loaded config
+        st.info(f"Running parse_draft_results for League {league_id}, Year {year}...")
+        draft_data = parse_draft_results(league_id=league_id, year=year, swid=swid, espn_s2=espn_s2)
+        # The function returns the DataFrame and saves the file in its __main__ block,
+        # but when called directly, it only returns the DataFrame. We need to save it here.
+        if draft_data is not None:
+            try:
+                # Ensure output directory exists before saving
+                draft_output_dir = os.path.dirname(DRAFT_RESULTS_FILE)
+                if draft_output_dir and not os.path.exists(draft_output_dir):
+                    os.makedirs(draft_output_dir)
+                draft_data.to_json(DRAFT_RESULTS_FILE, orient='records', indent=4)
+                st.success(f"Successfully generated and saved draft results to {DRAFT_RESULTS_FILE}.")
+            except Exception as save_e:
+                st.error(f"Generated draft data but failed to save to {DRAFT_RESULTS_FILE}: {save_e}")
+        else:
+            st.error("Failed to generate draft results. Check logs or script configuration.")
+    except Exception as e:
+        st.error(f"An error occurred while trying to generate draft results: {e}")
+        st.exception(e) # Show traceback
+
+# Check and generate Player Stats (using fetch_box_score_stats)
+if not os.path.exists(PLAYER_STATS_FILE):
+    st.warning(f"Player stats file ({PLAYER_STATS_FILE}) not found. Attempting to generate...")
+    try:
+        # Call the function with loaded config and script constants
+        st.info(f"Running fetch_box_score_stats for League {league_id}, Year {year}...")
+        box_stats = fetch_box_score_stats(
+            league_id=league_id,
+            year=year,
+            swid=swid,
+            espn_s2=espn_s2,
+            start_week=START_WEEK, # Use imported constant
+            end_week=END_WEEK,     # Use imported constant
+            delay=RATE_LIMIT_DELAY # Use imported constant
+        )
+        # The function returns the list and saves the file in its __main__ block,
+        # but when called directly, it only returns the list. We need to save it here.
+        if box_stats: # Check if it returned data
+            try:
+                 # Ensure output directory exists before saving
+                 stats_output_dir = os.path.dirname(PLAYER_STATS_FILE)
+                 if stats_output_dir and not os.path.exists(stats_output_dir):
+                     os.makedirs(stats_output_dir)
+                 with open(PLAYER_STATS_FILE, 'w') as f:
+                     json.dump(box_stats, f, indent=4)
+                 # Correct success message for player stats
+                 st.success(f"Successfully generated and saved player stats to {PLAYER_STATS_FILE}.")
+            # Correctly indented except block for the try starting above
+            except Exception as save_e:
+                 st.error(f"Generated player stats data but failed to save to {PLAYER_STATS_FILE}: {save_e}")
+        # This else corresponds to the 'if box_stats:' check
+        elif box_stats == []: # Function returns empty list on API connection failure or no data
+             st.warning("Player stats generation function returned no data. Check API connection or league status.")
+        # Removed the incorrect 'else' block that referred to draft results
+    # Correct error message for the outer try block
+    except Exception as e:
+        st.error(f"An error occurred while trying to generate player stats: {e}")
+        st.exception(e)
+
+# Check and generate Team Mapping
+# (The duplicated player stats block below this was removed by the previous replacement)
+# The Team Mapping block starts here...
+if not os.path.exists(TEAM_MAPPING_FILE):
+    st.warning(f"Team mapping file ({TEAM_MAPPING_FILE}) not found. Attempting to generate...")
+    try:
+        # Call the function with loaded config and imported constants for paths
+        st.info(f"Running fetch_and_save_team_info for League {league_id}, Year {year}...")
+        # Note: The function itself handles saving to the correct file (TEAM_INFO_OUTPUT_FILE)
+        # It uses the output_dir and output_file arguments passed to it.
+        # We pass the constants imported from the script.
+        success = fetch_and_save_team_info(
+            league_id=league_id,
+            year=year,
+            swid=swid,
+            espn_s2=espn_s2,
+            output_dir=TEAM_INFO_OUTPUT_DIR, # Use imported constant
+            output_file=TEAM_INFO_OUTPUT_FILE # Use imported constant
+        )
+        if success:
+            # Check if the specific file defined in the dashboard config exists now
+            if os.path.exists(TEAM_MAPPING_FILE):
+                 st.success(f"Successfully generated and saved team mapping to {TEAM_MAPPING_FILE}.")
+            else:
+                 # This case might occur if TEAM_MAPPING_FILE constant in dashboard
+                 # differs from TEAM_INFO_OUTPUT_FILE constant in the script.
+                 st.warning(f"Team info generation function succeeded, but the expected file {TEAM_MAPPING_FILE} was not found at the location defined in the dashboard script. Check path consistency.")
+        else:
+            st.error("Failed to generate team mapping. Check logs or script configuration.")
+    except Exception as e:
+        st.error(f"An error occurred while trying to generate team mapping: {e}")
+        st.exception(e)
+
+# --- Load Data ---
+st.info("Loading data files...")
 draft_df, stats_df, team_map = load_data(DRAFT_RESULTS_FILE, PLAYER_STATS_FILE, TEAM_MAPPING_FILE)
 
 # Proceed only if draft and stats data are loaded

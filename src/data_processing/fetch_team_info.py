@@ -2,21 +2,17 @@ import json
 import os
 import logging
 from espn_api.hockey import League
+# No new imports needed, json and os are already present
 
 # Configure logging (same style as fetch_box_score_stats.py)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- USER CONFIGURATION (Copied from fetch_box_score_stats.py) ---
-# Replace with your actual league details and credentials
-LEAGUE_ID = 52632018
-YEAR = 2025
-SWID = '{EC3394CD-9286-4EBB-BFF0-BE0BDFBCB79F}' # Replace with your SWID Cookie
-ESPN_S2 = 'AEBS5WA%2Bo11dLS2wzax2UxfLN3h9JTqNsqBtLbR%2BIEQXSBfIKZvcoiwCmKH2DjQb2jcwP3bYydJYQH9up9sJERKnvikLlsCGHnTtEtkVf49epcUZLaOSUmhCgoZwthxSORcY2TFbVvcf4hu3K9rHmk454ADEUr%2BUarxBYh725lOGgjlzQZ97qYHM139NkD%2FnzSU4QmwWBYLiVLIX8ImweEzFP2Knx5z0auEzL3F6jcsdmWKBzX7mFqt6hs4PtYpDUHhnGX88UKI3I1QSazxxkKMLXnhZ5HulnlEd7ZZTYF8r%2BQ%3D%3D' # Replace with your ESPN_S2 Cookie
-# --- END USER CONFIGURATION ---
+# --- CONFIGURATION (Now loaded from user_config.json) ---
 
 # --- SCRIPT CONFIGURATION ---
 OUTPUT_DIR = 'src/data'
 OUTPUT_FILE = os.path.join(OUTPUT_DIR, 'team_mapping.json') # Output file for the name->abbreviation map
+CONFIG_FILE = '../../user_config.json' # Path relative to this script
 # --- END SCRIPT CONFIGURATION ---
 
 def fetch_and_save_team_info(league_id, year, swid, espn_s2, output_dir, output_file):
@@ -96,10 +92,49 @@ def fetch_and_save_team_info(league_id, year, swid, espn_s2, output_dir, output_
         return False # Indicate failure
 
 if __name__ == "__main__":
-    logging.info("Starting team info fetch process...")
-    success = fetch_and_save_team_info(LEAGUE_ID, YEAR, SWID, ESPN_S2, OUTPUT_DIR, OUTPUT_FILE)
+    # Construct the absolute path to the config file
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.abspath(os.path.join(script_dir, CONFIG_FILE))
 
-    if success:
-        logging.info("Team info fetch process completed successfully.")
-    else:
-        logging.error("Team info fetch process failed.")
+    # Load configuration from JSON file
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        logging.info(f"Loaded configuration from {config_path}")
+    except FileNotFoundError:
+        logging.error(f"Configuration file not found at {config_path}")
+        config = None
+    except json.JSONDecodeError:
+        logging.error(f"Error decoding JSON from the configuration file: {config_path}")
+        config = None
+    except Exception as e:
+        logging.error(f"An error occurred loading the configuration file: {e}")
+        config = None
+
+    if config:
+        # Extract config values
+        league_id = config.get('LEAGUE_ID')
+        year = config.get('YEAR')
+        swid = config.get('SWID')
+        espn_s2 = config.get('ESPN_S2')
+
+        if not all([league_id, year, swid, espn_s2]):
+             logging.error("One or more required configuration keys (LEAGUE_ID, YEAR, SWID, ESPN_S2) are missing from the config file.")
+        else:
+            logging.info("Starting team info fetch process...")
+            # Use loaded config and script defaults for output paths
+            success = fetch_and_save_team_info(
+                league_id=league_id,
+                year=year,
+                swid=swid,
+                espn_s2=espn_s2,
+                output_dir=OUTPUT_DIR,
+                output_file=OUTPUT_FILE
+            )
+
+            if success:
+                logging.info("Team info fetch process completed successfully.")
+            else:
+                logging.error("Team info fetch process failed.")
+    else: # This corresponds to the outer 'if config:'
+        logging.error("Failed to load configuration. Cannot fetch team info.")

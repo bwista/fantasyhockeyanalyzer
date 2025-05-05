@@ -1,23 +1,21 @@
 from espn_api.hockey import League
 import pandas as pd
 import logging
+import json # Added to load config
+import os # Added to construct config path
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- USER CONFIGURATION ---
-# Replace with your actual league details and credentials
-LEAGUE_ID = 52632018
-YEAR = 2025
-SWID = '{EC3394CD-9286-4EBB-BFF0-BE0BDFBCB79F}' # Replace with your SWID Cookie
-ESPN_S2 = 'AEBS5WA%2Bo11dLS2wzax2UxfLN3h9JTqNsqBtLbR%2BIEQXSBfIKZvcoiwCmKH2DjQb2jcwP3bYydJYQH9up9sJERKnvikLlsCGHnTtEtkVf49epcUZLaOSUmhCgoZwthxSORcY2TFbVvcf4hu3K9rHmk454ADEUr%2BUarxBYh725lOGgjlzQZ97qYHM139NkD%2FnzSU4QmwWBYLiVLIX8ImweEzFP2Knx5z0auEzL3F6jcsdmWKBzX7mFqt6hs4PtYpDUHhnGX88UKI3I1QSazxxkKMLXnhZ5HulnlEd7ZZTYF8r%2BQ%3D%3D' # Replace with your ESPN_S2 Cookie
-# --- END USER CONFIGURATION ---
+# --- CONFIGURATION (Now loaded from user_config.json) ---
 
 # --- SCRIPT CONFIGURATION ---
 OUTPUT_FILE = 'src/data/draft_results.json' # Output file path (relative to project root where script is run)
+CONFIG_FILE = '../../user_config.json' # Path relative to this script
+
 # --- END SCRIPT CONFIGURATION
 
-def parse_draft_results(league_id=LEAGUE_ID, year=YEAR, swid=SWID, espn_s2=ESPN_S2):
+def parse_draft_results(league_id, year, swid, espn_s2):
     """
     Fetches draft results for a given ESPN fantasy hockey league season using the ESPN API.
 
@@ -88,21 +86,64 @@ def parse_draft_results(league_id=LEAGUE_ID, year=YEAR, swid=SWID, espn_s2=ESPN_
     return draft_df
 
 if __name__ == "__main__":
-    # Parse the draft results
-    draft_results = parse_draft_results()
-    
-    if draft_results is not None:
-        # Save to JSON
-        draft_results.to_json(OUTPUT_FILE, orient='records', indent=4)
-        logging.info(f"Draft results saved to {OUTPUT_FILE}")
+    # Construct the absolute path to the config file
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.abspath(os.path.join(script_dir, CONFIG_FILE))
 
-        # Display first few rows (optional, kept for consistency)
-        print("\nFirst few picks (DataFrame format):")
-        print(draft_results.head())
+    # Load configuration from JSON file
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        logging.info(f"Loaded configuration from {config_path}")
+    except FileNotFoundError:
+        logging.error(f"Configuration file not found at {config_path}")
+        config = None
+    except json.JSONDecodeError:
+        logging.error(f"Error decoding JSON from the configuration file: {config_path}")
+        config = None
+    except Exception as e:
+        logging.error(f"An error occurred loading the configuration file: {e}")
+        config = None
 
-        # Display summary (optional, kept for consistency)
-        print(f"\nTotal picks: {len(draft_results)}")
-        print("\nPicks by team:")
-        print(draft_results['Team'].value_counts())
-    else:
+    if config:
+        # Extract config values
+        league_id = config.get('LEAGUE_ID')
+        year = config.get('YEAR')
+        swid = config.get('SWID')
+        espn_s2 = config.get('ESPN_S2')
+
+        if not all([league_id, year, swid, espn_s2]):
+             logging.error("One or more required configuration keys (LEAGUE_ID, YEAR, SWID, ESPN_S2) are missing from the config file.")
+        else:
+            # Parse the draft results using loaded config
+            draft_results = parse_draft_results(league_id=league_id, year=year, swid=swid, espn_s2=espn_s2)
+
+            if draft_results is not None:
+                # Ensure the output directory exists
+                output_dir = os.path.dirname(OUTPUT_FILE)
+                if output_dir and not os.path.exists(output_dir):
+                    try:
+                        os.makedirs(output_dir)
+                        logging.info(f"Created output directory: {output_dir}")
+                    except OSError as e:
+                        logging.error(f"Error creating output directory {output_dir}: {e}")
+                        # Exit or handle error appropriately if directory creation fails
+                        draft_results = None # Prevent attempting to save
+
+            if draft_results is not None:
+                # Save to JSON
+                draft_results.to_json(OUTPUT_FILE, orient='records', indent=4)
+                logging.info(f"Draft results saved to {OUTPUT_FILE}")
+
+                # Display first few rows (optional, kept for consistency)
+                print("\nFirst few picks (DataFrame format):")
+                print(draft_results.head())
+
+                # Display summary (optional, kept for consistency)
+                print(f"\nTotal picks: {len(draft_results)}")
+                print("\nPicks by team:")
+                print(draft_results['Team'].value_counts())
+            else: # This corresponds to the inner 'if draft_results is not None:'
+                logging.error("Failed to fetch draft results after config check. No output file created.")
+    else: # This corresponds to the outer 'if config:'
         logging.error("Failed to fetch draft results. No output file created.")

@@ -2,20 +2,16 @@ import json
 from espn_api.hockey import League
 import logging
 import time
+import os # Added for config path
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- USER CONFIGURATION (Copied from fetch_player_stats.py) ---
-# Replace with your actual league details and credentials
-LEAGUE_ID = 52632018
-YEAR = 2025
-SWID = '{EC3394CD-9286-4EBB-BFF0-BE0BDFBCB79F}' # Replace with your SWID Cookie
-ESPN_S2 = 'AEBS5WA%2Bo11dLS2wzax2UxfLN3h9JTqNsqBtLbR%2BIEQXSBfIKZvcoiwCmKH2DjQb2jcwP3bYydJYQH9up9sJERKnvikLlsCGHnTtEtkVf49epcUZLaOSUmhCgoZwthxSORcY2TFbVvcf4hu3K9rHmk454ADEUr%2BUarxBYh725lOGgjlzQZ97qYHM139NkD%2FnzSU4QmwWBYLiVLIX8ImweEzFP2Knx5z0auEzL3F6jcsdmWKBzX7mFqt6hs4PtYpDUHhnGX88UKI3I1QSazxxkKMLXnhZ5HulnlEd7ZZTYF8r%2BQ%3D%3D' # Replace with your ESPN_S2 Cookie
-# --- END USER CONFIGURATION ---
+# --- CONFIGURATION (Now loaded from user_config.json) ---
 
 # --- SCRIPT CONFIGURATION ---
 OUTPUT_FILE = 'src/data/box_score_stats.json' # Output file path (relative to project root where script is run)
+CONFIG_FILE = '../../user_config.json' # Path relative to this script
 START_WEEK = 1 # Week to start fetching data from
 END_WEEK = None # Set to None to fetch up to the current week, or specify an end week number
 RATE_LIMIT_DELAY = 2 # Seconds to wait between fetching weeks to avoid rate limiting
@@ -165,20 +161,72 @@ def fetch_box_score_stats(league_id, year, swid, espn_s2, start_week, end_week, 
     return all_box_score_stats
 
 if __name__ == "__main__":
-    logging.info("Starting box score stats fetch process...")
-    box_stats = fetch_box_score_stats(LEAGUE_ID, YEAR, SWID, ESPN_S2, START_WEEK, END_WEEK, RATE_LIMIT_DELAY)
+    # Construct the absolute path to the config file
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.abspath(os.path.join(script_dir, CONFIG_FILE))
 
-    if box_stats:
-        try:
-            logging.info(f"Attempting to save data to: {OUTPUT_FILE}...")
-            with open(OUTPUT_FILE, 'w') as f:
-                json.dump(box_stats, f, indent=4)
-            logging.info(f"Box score stats saved successfully to: {OUTPUT_FILE}")
-            print(f"\nBox score stats saved to {OUTPUT_FILE}")
-            print(f"Total player-game entries saved: {len(box_stats)}")
-        except Exception as e:
-            logging.error(f"Failed to save box score stats to JSON: {e}")
-            print(f"Error: Failed to save box score stats to {OUTPUT_FILE}")
-    else:
-        logging.warning("No box score data collected. JSON file not created.")
-        print("Warning: No box score data collected. JSON file not created.")
+    # Load configuration from JSON file
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        logging.info(f"Loaded configuration from {config_path}")
+    except FileNotFoundError:
+        logging.error(f"Configuration file not found at {config_path}")
+        config = None
+    except json.JSONDecodeError:
+        logging.error(f"Error decoding JSON from the configuration file: {config_path}")
+        config = None
+    except Exception as e:
+        logging.error(f"An error occurred loading the configuration file: {e}")
+        config = None
+
+    if config:
+        # Extract config values
+        league_id = config.get('LEAGUE_ID')
+        year = config.get('YEAR')
+        swid = config.get('SWID')
+        espn_s2 = config.get('ESPN_S2')
+
+        if not all([league_id, year, swid, espn_s2]):
+             logging.error("One or more required configuration keys (LEAGUE_ID, YEAR, SWID, ESPN_S2) are missing from the config file.")
+        else:
+            logging.info("Starting box score stats fetch process...")
+            # Use loaded config and script defaults for week/delay
+            box_stats = fetch_box_score_stats(
+                league_id=league_id,
+                year=year,
+                swid=swid,
+                espn_s2=espn_s2,
+                start_week=START_WEEK,
+                end_week=END_WEEK,
+                delay=RATE_LIMIT_DELAY
+            )
+
+            if box_stats:
+                 # Ensure the output directory exists
+                 output_dir = os.path.dirname(OUTPUT_FILE)
+                 if output_dir and not os.path.exists(output_dir):
+                     try:
+                         os.makedirs(output_dir)
+                         logging.info(f"Created output directory: {output_dir}")
+                     except OSError as e:
+                         logging.error(f"Error creating output directory {output_dir}: {e}")
+                         box_stats = None # Prevent attempting to save
+
+            if box_stats: # Re-check in case directory creation failed
+                try:
+                    logging.info(f"Attempting to save data to: {OUTPUT_FILE}...")
+                    with open(OUTPUT_FILE, 'w') as f:
+                        json.dump(box_stats, f, indent=4)
+                    # Correctly indented block after successful save
+                    logging.info(f"Box score stats saved successfully to: {OUTPUT_FILE}")
+                    print(f"\nBox score stats saved to {OUTPUT_FILE}")
+                    print(f"Total player-game entries saved: {len(box_stats)}")
+                except Exception as e:
+                    logging.error(f"Failed to save box score stats to JSON: {e}")
+                    print(f"Error: Failed to save box score stats to {OUTPUT_FILE}")
+            else: # This corresponds to the 'if box_stats:' check (line ~216)
+                 logging.warning("No box score data collected or directory creation failed. JSON file not created.")
+                 print("Warning: No box score data collected or directory creation failed. JSON file not created.")
+    else: # This corresponds to the outer 'if config:'
+        logging.error("Failed to load configuration. Cannot fetch box score stats.")
