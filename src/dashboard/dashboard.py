@@ -160,7 +160,7 @@ def determine_acquisition_type(group):
 
         # Check conditions for the *first* record of the player
         if i == group.index[0]:
-            if pd.notna(row['Overall Pick']) and row['team_abbrev'] == row['DraftingTeamAbbrev']:
+            if pd.notna(row['Overall Pick']) and row['team_abbrev'] == row['DraftingTeamAbbrev']: # Logic remains based on Abbrev
                 current_type = 'drafted'
                 is_drafted = True
             # Else: remains 'waiver' (undrafted or drafted but first record doesn't match drafting team)
@@ -355,22 +355,28 @@ if draft_df is not None and stats_df is not None:
 
         # I.4 Prepare Draft Data
         show_temporary_message("info", "Preparing draft data...", 0.25)
+        # Select necessary columns and rename 'Player' to 'name' and 'Team' to 'DraftingTeamName'
         draft_prepared_df = draft_df[['Player', 'Overall Pick', 'Team']].copy()
+        draft_prepared_df.rename(columns={'Player': 'name', 'Team': 'DraftingTeamName'}, inplace=True)
+
+        # Create 'DraftingTeamAbbrev' for internal logic using team_map
         if team_map is not None:
-            draft_prepared_df['DraftingTeamAbbrev'] = draft_prepared_df['Team'].map(team_map).fillna('UNKNOWN_MAP')
-            if 'UNKNOWN_MAP' in draft_prepared_df['DraftingTeamAbbrev'].unique():
-                 st.warning("Some drafting team names could not be mapped. Check team_mapping.json.")
+            draft_prepared_df['DraftingTeamAbbrev'] = draft_prepared_df['DraftingTeamName'].map(team_map)
+            # Check for names not found in team_map
+            unmapped_mask = draft_prepared_df['DraftingTeamAbbrev'].isna()
+            if unmapped_mask.any():
+                st.warning(f"Could not map the following drafting team names to abbreviations for internal logic: {draft_prepared_df.loc[unmapped_mask, 'DraftingTeamName'].unique().tolist()}. Using 'UNMAPPED_ABBREV'.")
+                draft_prepared_df.loc[unmapped_mask, 'DraftingTeamAbbrev'] = 'UNMAPPED_ABBREV'
         else:
-            st.warning("Team mapping not available. DraftingTeamAbbrev cannot be added.")
-            draft_prepared_df['DraftingTeamAbbrev'] = 'N/A'
-        draft_prepared_df = draft_prepared_df.rename(columns={'Player': 'name'})
-        show_temporary_message("success", "Prepared draft data.", 0.25)
+            st.warning("Team mapping file not loaded. 'DraftingTeamAbbrev' will be set to 'NO_TEAM_MAP_ABBREV' for internal logic.")
+            draft_prepared_df['DraftingTeamAbbrev'] = 'NO_TEAM_MAP_ABBREV'
+        show_temporary_message("success", "Prepared draft data with DraftingTeamName and DraftingTeamAbbrev.", 0.25)
 
         # I.5 Merge Draft Info with Per-Team Stats
         show_temporary_message("info", "Merging draft info into per-team stats...", 0.25)
         merged_team_stats = pd.merge(
             player_team_stats,
-            draft_prepared_df[['name', 'Overall Pick', 'DraftingTeamAbbrev']],
+            draft_prepared_df[['name', 'Overall Pick', 'DraftingTeamAbbrev', 'DraftingTeamName']], # Ensure both are included
             on='name',
             how='left' # Keep all player-team stats, add draft info where available
         )
@@ -454,8 +460,8 @@ if draft_df is not None and stats_df is not None:
                 drafted_plot_df, # Use filtered drafted data
                 x='Overall Pick',
                 y='PointsRank',
-                color='DraftingTeamAbbrev', # Color by drafting team
-                hover_data=['name', 'Overall Pick', 'PointsRank', 'DraftingTeamAbbrev', 'TotalPoints', 'ValueScore'], # Use name, TotalPoints
+                color='DraftingTeamName', # Color by drafting team name
+                hover_data=['name', 'Overall Pick', 'PointsRank', 'DraftingTeamName', 'TotalPoints', 'ValueScore'], # Use name, TotalPoints
                 title="Draft Position vs. Season Points Rank (Drafted Players)",
                 trendline=None, # Trendline will be added manually
                 color_discrete_sequence=px.colors.qualitative.Bold
@@ -480,7 +486,7 @@ if draft_df is not None and stats_df is not None:
                 yaxis_range=[y_axis_limit, 0], # Inverted Y axis with fixed limit
                 yaxis_autorange=False, # Disable autorange for Y
                 xaxis_autorange=False,  # Disable autorange for X
-                legend_title_text='Drafting Team'
+                legend_title_text='Drafting Team Name'
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -495,7 +501,7 @@ if draft_df is not None and stats_df is not None:
 
         col1, col2 = st.columns(2)
         # Define columns for concise display tables
-        display_cols_value = ['Overall Pick', 'name', 'DraftingTeamAbbrev', 'TotalPoints', 'PointsRank', 'ValueScore']
+        display_cols_value = ['Overall Pick', 'name', 'DraftingTeamName', 'TotalPoints', 'PointsRank', 'ValueScore']
 
         with col1:
             st.markdown(f"**Top {N_PICKS_DISPLAY} Best Value Picks**")
@@ -513,11 +519,11 @@ if draft_df is not None and stats_df is not None:
         # --- Team-Specific Draft Value Analysis (Based on Drafted Players) ---
         st.subheader("Team-Specific Draft Value Analysis")
         # Get drafting teams from the drafted subset
-        drafting_teams = sorted(drafted_value_df['DraftingTeamAbbrev'].dropna().unique())
+        drafting_teams = sorted(drafted_value_df['DraftingTeamName'].dropna().unique()) # Use DraftingTeamName
         if drafting_teams:
-             selected_draft_team = st.selectbox('Select Drafting Team:', drafting_teams)
+             selected_draft_team = st.selectbox('Select Drafting Team:', drafting_teams) # Shows full names
              if selected_draft_team:
-                 team_value_df = drafted_value_df[drafted_value_df['DraftingTeamAbbrev'] == selected_draft_team].copy()
+                 team_value_df = drafted_value_df[drafted_value_df['DraftingTeamName'] == selected_draft_team].copy() # Filter by DraftingTeamName
                  st.markdown(f"**Draft Value Analysis for {selected_draft_team}**")
 
                  col3, col4 = st.columns(2)
@@ -542,11 +548,12 @@ if draft_df is not None and stats_df is not None:
         st.markdown("_Players acquired via waiver/trade, ranked by their total points scored across the entire season._")
         if not waiver_records_df.empty:
             # Get unique players acquired via waiver
-            unique_waiver_players = waiver_records_df[['name', 'TotalPoints', 'Overall Pick', 'DraftingTeamAbbrev']].drop_duplicates(subset=['name'])
+            # Get unique players acquired via waiver, include their original DraftingTeamName
+            unique_waiver_players = waiver_records_df[['name', 'TotalPoints', 'Overall Pick', 'DraftingTeamName']].drop_duplicates(subset=['name'])
             # Sort them by TotalPoints
             top_overall_acquisitions = unique_waiver_players.sort_values(by='TotalPoints', ascending=False)
             # Display
-            display_cols_overall_acq = ['name', 'TotalPoints', 'Overall Pick', 'DraftingTeamAbbrev']
+            display_cols_overall_acq = ['name', 'TotalPoints', 'Overall Pick', 'DraftingTeamName']
             st.dataframe(top_overall_acquisitions.head(N_PICKS_DISPLAY)[display_cols_overall_acq], hide_index=True, use_container_width=True)
         else:
             st.info("No waiver/trade acquisitions found.")
@@ -580,7 +587,7 @@ if draft_df is not None and stats_df is not None:
             all_cols_ordered = [
                 'name', 'team_abbrev', 'acquisition_type', 'TeamPoints', 'TotalPoints', # Core Info
                 'FirstWeek', 'LastWeek', # Stint Info
-                'Overall Pick', 'DraftingTeamAbbrev', # Draft Info (if applicable)
+                'Overall Pick', 'DraftingTeamName', 'DraftingTeamAbbrev', # Draft Info (if applicable)
                 'PointsRank', 'ValueScore' # Ranks & Value (if applicable)
             ]
             # Add any remaining columns automatically
