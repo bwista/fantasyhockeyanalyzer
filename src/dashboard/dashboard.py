@@ -23,6 +23,10 @@ from src.data_processing.parse_draft_results import parse_draft_results
 from src.data_processing.fetch_box_score_stats import fetch_box_score_stats, START_WEEK, END_WEEK, RATE_LIMIT_DELAY
 # Import the function AND the constants needed for the call
 from src.data_processing.fetch_team_info import fetch_and_save_team_info, OUTPUT_DIR as TEAM_INFO_OUTPUT_DIR, OUTPUT_FILE as TEAM_INFO_OUTPUT_FILE
+# Add import for new logic module
+from src.dashboard.dashboard_logic import (
+    ensure_data_files_exist, process_data, plot_draft_value
+)
 
 # Configure logging for dashboard (optional, but good practice)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -216,289 +220,35 @@ data_loading_placeholder = st.empty()  # Create a placeholder for the data loadi
 with data_loading_placeholder.container():
     st.subheader("Data Loading & Preparation")
 
-    # Ensure data directory exists (optional but good practice)
-    DATA_DIR = 'src/data'
-    if not os.path.exists(DATA_DIR):
-        try:
-            os.makedirs(DATA_DIR)
-            st.info(f"Created data directory: {DATA_DIR}")
-        except OSError as e:
-            st.error(f"Error creating data directory {DATA_DIR}: {e}")
-            st.stop() # Stop if we can't create the data directory
-
-    # Check and generate Draft Results
-    if not os.path.exists(DRAFT_RESULTS_FILE):
-        st.warning(f"Draft results file ({DRAFT_RESULTS_FILE}) not found. Attempting to generate...")
-        try:
-            # Call the function with loaded config
-            st.info(f"Running parse_draft_results for League {league_id}, Year {year}...")
-            draft_data = parse_draft_results(league_id=league_id, year=year, swid=swid, espn_s2=espn_s2)
-            # The function returns the DataFrame and saves the file in its __main__ block,
-            # but when called directly, it only returns the DataFrame. We need to save it here.
-            if draft_data is not None:
-                try:
-                    # Ensure output directory exists before saving
-                    draft_output_dir = os.path.dirname(DRAFT_RESULTS_FILE)
-                    if draft_output_dir and not os.path.exists(draft_output_dir):
-                        os.makedirs(draft_output_dir)
-                    draft_data.to_json(DRAFT_RESULTS_FILE, orient='records', indent=4)
-                    st.success(f"Successfully generated and saved draft results to {DRAFT_RESULTS_FILE}.")
-                except Exception as save_e:
-                    st.error(f"Generated draft data but failed to save to {DRAFT_RESULTS_FILE}: {save_e}")
-            else:
-                st.error("Failed to generate draft results. Check logs or script configuration.")
-        except Exception as e:
-            st.error(f"An error occurred while trying to generate draft results: {e}")
-            st.exception(e) # Show traceback
-
-    # Check and generate Player Stats (using fetch_box_score_stats)
-    if not os.path.exists(PLAYER_STATS_FILE):
-        st.warning(f"Player stats file ({PLAYER_STATS_FILE}) not found. Attempting to generate...")
-        try:
-            # Call the function with loaded config and script constants
-            st.info(f"Running fetch_box_score_stats for League {league_id}, Year {year}...")
-            box_stats = fetch_box_score_stats(
-                league_id=league_id,
-                year=year,
-                swid=swid,
-                espn_s2=espn_s2,
-                start_week=START_WEEK, # Use imported constant
-                end_week=END_WEEK,     # Use imported constant
-                delay=RATE_LIMIT_DELAY # Use imported constant
-            )
-            # The function returns the list and saves the file in its __main__ block,
-            # but when called directly, it only returns the list. We need to save it here.
-            if box_stats: # Check if it returned data
-                try:
-                     # Ensure output directory exists before saving
-                     stats_output_dir = os.path.dirname(PLAYER_STATS_FILE)
-                     if stats_output_dir and not os.path.exists(stats_output_dir):
-                         os.makedirs(stats_output_dir)
-                     with open(PLAYER_STATS_FILE, 'w') as f:
-                         json.dump(box_stats, f, indent=4)
-                     # Correct success message for player stats
-                     st.success(f"Successfully generated and saved player stats to {PLAYER_STATS_FILE}.")
-                # Correctly indented except block for the try starting above
-                except Exception as save_e:
-                     st.error(f"Generated player stats data but failed to save to {PLAYER_STATS_FILE}: {save_e}")
-            # This else corresponds to the 'if box_stats:' check
-            elif box_stats == []: # Function returns empty list on API connection failure or no data
-                 st.warning("Player stats generation function returned no data. Check API connection or league status.")
-            # Removed the incorrect 'else' block that referred to draft results
-        # Correct error message for the outer try block
-        except Exception as e:
-            st.error(f"An error occurred while trying to generate player stats: {e}")
-            st.exception(e)
-
-    # Check and generate Team Mapping
-    # (The duplicated player stats block below this was removed by the previous replacement)
-    # The Team Mapping block starts here...
-    if not os.path.exists(TEAM_MAPPING_FILE):
-        st.warning(f"Team mapping file ({TEAM_MAPPING_FILE}) not found. Attempting to generate...")
-        try:
-            # Call the function with loaded config and imported constants for paths
-            st.info(f"Running fetch_and_save_team_info for League {league_id}, Year {year}...")
-            # Note: The function itself handles saving to the correct file (TEAM_INFO_OUTPUT_FILE)
-            # It uses the output_dir and output_file arguments passed to it.
-            # We pass the constants imported from the script.
-            success = fetch_and_save_team_info(
-                league_id=league_id,
-                year=year,
-                swid=swid,
-                espn_s2=espn_s2,
-                output_dir=TEAM_INFO_OUTPUT_DIR, # Use imported constant
-                output_file=TEAM_INFO_OUTPUT_FILE # Use imported constant
-            )
-            if success:
-                # Check if the specific file defined in the dashboard config exists now
-                if os.path.exists(TEAM_MAPPING_FILE):
-                     st.success(f"Successfully generated and saved team mapping to {TEAM_MAPPING_FILE}.")
-                else:
-                     # This case might occur if TEAM_MAPPING_FILE constant in dashboard
-                     # differs from TEAM_INFO_OUTPUT_FILE constant in the script.
-                     st.warning(f"Team info generation function succeeded, but the expected file {TEAM_MAPPING_FILE} was not found at the location defined in the dashboard script. Check path consistency.")
-            else:
-                st.error("Failed to generate team mapping. Check logs or script configuration.")
-        except Exception as e:
-            st.error(f"An error occurred while trying to generate team mapping: {e}")
-            st.exception(e)
-
-    # --- Load the league draft and player stats data ---
-    st.info("Loading data files...")
-    draft_df, stats_df, team_map = load_data(DRAFT_RESULTS_FILE, PLAYER_STATS_FILE, TEAM_MAPPING_FILE)
+    # Use new modular function for all data file checks and loading
+    draft_df, stats_df, team_map = ensure_data_files_exist(
+        config,
+        DRAFT_RESULTS_FILE,
+        PLAYER_STATS_FILE,
+        TEAM_MAPPING_FILE,
+        parse_draft_results,
+        fetch_box_score_stats,
+        fetch_and_save_team_info,
+        START_WEEK,
+        END_WEEK,
+        RATE_LIMIT_DELAY,
+        TEAM_INFO_OUTPUT_DIR,
+        TEAM_INFO_OUTPUT_FILE,
+        st=st
+    )
 # If we reach here, all data files are loaded/generated, so clear the section:
 data_loading_placeholder.empty()
 
-
 # Proceed only if draft and stats data are loaded
 if draft_df is not None and stats_df is not None:
-    # --- Data Processing Steps from PLAN.md ---
-    final_df = None # Initialize final_df
-    try:
-        show_temporary_message("info", "Starting data processing...", 0.25)
-
-        # I.2 Aggregate Stats per Player per Team
-        if 'name' in stats_df.columns and 'team_abbrev' in stats_df.columns and 'total_points' in stats_df.columns and 'week' in stats_df.columns:
-            show_temporary_message("info", "Aggregating stats per player/team...", 0.25)
-            player_team_stats = stats_df.groupby(['name', 'team_abbrev']).agg(
-                TeamPoints=('total_points', 'sum'),
-                FirstWeek=('week', 'min'),
-                LastWeek=('week', 'max')
-            ).reset_index()
-            show_temporary_message("success", f"Aggregated stats for {len(player_team_stats)} player-team combinations.", 0.25)
-        else:
-            st.error("Required columns ('name', 'team_abbrev', 'total_points', 'week') missing in stats_df. Cannot perform per-team aggregation.")
-            st.stop() # Stop execution if basic stats aggregation fails
-
-        # I.3 Aggregate Overall Player Stats
-        if 'name' in stats_df.columns and 'total_points' in stats_df.columns:
-             show_temporary_message("info", "Aggregating overall player stats...", 0.25)
-             total_player_stats = stats_df.groupby('name').agg(
-                 TotalPoints=('total_points', 'sum')
-             ).reset_index()
-             show_temporary_message("success", f"Aggregated total points for {len(total_player_stats)} unique players.", 0.25)
-        else:
-             st.error("Required columns ('name', 'total_points') missing in stats_df. Cannot perform overall aggregation.")
-             st.stop()
-
-        # I.4 Prepare Draft Data
-        show_temporary_message("info", "Preparing draft data...", 0.25)
-        # Select necessary columns and rename 'Player' to 'name' and 'Team' to 'DraftingTeamName'
-        draft_prepared_df = draft_df[['Player', 'Overall Pick', 'Team']].copy()
-        draft_prepared_df.rename(columns={'Player': 'name', 'Team': 'DraftingTeamName'}, inplace=True)
-
-        # Create 'DraftingTeamAbbrev' for internal logic using team_map
-        if team_map is not None:
-            draft_prepared_df['DraftingTeamAbbrev'] = draft_prepared_df['DraftingTeamName'].map(team_map)
-            # Check for names not found in team_map
-            unmapped_mask = draft_prepared_df['DraftingTeamAbbrev'].isna()
-            if unmapped_mask.any():
-                st.warning(f"Could not map the following drafting team names to abbreviations for internal logic: {draft_prepared_df.loc[unmapped_mask, 'DraftingTeamName'].unique().tolist()}. Using 'UNMAPPED_ABBREV'.")
-                draft_prepared_df.loc[unmapped_mask, 'DraftingTeamAbbrev'] = 'UNMAPPED_ABBREV'
-        else:
-            st.warning("Team mapping file not loaded. 'DraftingTeamAbbrev' will be set to 'NO_TEAM_MAP_ABBREV' for internal logic.")
-            draft_prepared_df['DraftingTeamAbbrev'] = 'NO_TEAM_MAP_ABBREV'
-        show_temporary_message("success", "Prepared draft data with DraftingTeamName and DraftingTeamAbbrev.", 0.25)
-
-        # I.5 Merge Draft Info with Per-Team Stats
-        show_temporary_message("info", "Merging draft info into per-team stats...", 0.25)
-        merged_team_stats = pd.merge(
-            player_team_stats,
-            draft_prepared_df[['name', 'Overall Pick', 'DraftingTeamAbbrev', 'DraftingTeamName']], # Ensure both are included
-            on='name',
-            how='left' # Keep all player-team stats, add draft info where available
-        )
-        show_temporary_message("success", "Merged draft info.", 0.25)
-
-        # I.6 Determine Acquisition Type
-        show_temporary_message("info", "Determining acquisition type for each player-team record...", 0.25)
-        # Apply the helper function group-wise
-        # Important: Ensure data types are compatible before grouping if necessary
-        final_team_stats_df = merged_team_stats.groupby('name', group_keys=False).apply(determine_acquisition_type)
-        show_temporary_message("success", "Determined acquisition types.", 0.25)
-
-        # I.7 Combine with Overall Stats
-        show_temporary_message("info", "Merging overall total points...", 0.25)
-        final_df = pd.merge(
-            final_team_stats_df,
-            total_player_stats,
-            on='name',
-            how='left' # Should match all records from final_team_stats_df
-        )
-        # Fill NaN TotalPoints just in case (shouldn't happen with left merge if total_player_stats is complete)
-        final_df['TotalPoints'] = final_df['TotalPoints'].fillna(0)
-        show_temporary_message("success", "Final DataFrame created.", 0.25)
-
-    except Exception as e:
-        st.error(f"An error occurred during data processing: {e}")
-        st.exception(e) # Show traceback for debugging
-        final_df = None # Ensure final_df is None if processing fails
-
-    # --- Calculate Value (using the new final_df) ---
-    if final_df is not None:
-        value_df = calculate_value(final_df.copy(), 'TotalPoints') # Pass 'TotalPoints' as points_col
-    else:
-        value_df = None # Ensure value_df is None if processing failed
+    # --- Data Processing Steps ---
+    final_df, value_df = process_data(draft_df, stats_df, team_map, st=st)
 
     # --- Display Results ---
     if value_df is not None:
-        st.header("Draft & Acquisition Analysis Results") # Updated Header
-
-        # --- Scatter Plot: Overall Pick vs Points Rank (Drafted Players Only) ---
-        st.subheader("Draft Value: Overall Pick vs. Fantasy Points Rank")
-        st.markdown("_This plot shows only players who were initially drafted and plots their draft position against their final points rank for the season._")
-
-        # Filter for drafted records only for plotting draft value
-        drafted_plot_df = value_df[value_df['acquisition_type'] == 'drafted'].copy()
-
-        # --- Calculate Trendline on DRAFTED data ---
-        trendline_results = None
-        trendline_x = None
-        trendline_y_pred = None
-        if not drafted_plot_df.empty and 'Overall Pick' in drafted_plot_df.columns and 'PointsRank' in drafted_plot_df.columns:
-            # Prepare data for OLS (handle potential NaNs just in case)
-            ols_data = drafted_plot_df[['Overall Pick', 'PointsRank']].dropna()
-            if not ols_data.empty and len(ols_data) > 1: # Need at least 2 points for trendline
-                X = ols_data['Overall Pick']
-                y = ols_data['PointsRank']
-                X_with_const = sm.add_constant(X)
-                try:
-                    model = sm.OLS(y, X_with_const)
-                    trendline_results = model.fit()
-                    # Generate points for the trendline trace spanning the x-axis
-                    trendline_x = np.linspace(X.min(), X.max(), 100)
-                    trendline_x_with_const = sm.add_constant(trendline_x)
-                    trendline_y_pred = trendline_results.predict(trendline_x_with_const)
-                except Exception as e:
-                    st.warning(f"Could not calculate trendline: {e}")
-
-
-        # --- Generate Plot ---
-        if not drafted_plot_df.empty:
-            # Determine axis limits (based on drafted dataset)
-            max_pick = drafted_plot_df['Overall Pick'].max() if not drafted_plot_df.empty else 160
-            max_rank = drafted_plot_df['PointsRank'].max() if not drafted_plot_df.empty else 160
-            # Use overall max rank from value_df for y-axis consistency if needed
-            max_rank = value_df['PointsRank'].max() if not value_df.empty else 160
-            x_axis_limit = max_pick * 1.2
-            y_axis_limit = max_rank * 1.2
-
-            # Create scatter plot WITHOUT automatic trendline
-            fig = px.scatter(
-                drafted_plot_df, # Use filtered drafted data
-                x='Overall Pick',
-                y='PointsRank',
-                color='DraftingTeamName', # Color by drafting team name
-                hover_data=['name', 'Overall Pick', 'PointsRank', 'DraftingTeamName', 'TotalPoints', 'ValueScore'], # Use name, TotalPoints
-                title="Draft Position vs. Season Points Rank (Drafted Players)",
-                trendline=None, # Trendline will be added manually
-                color_discrete_sequence=px.colors.qualitative.Bold
-            )
-
-            # Add the pre-calculated "Drafted Players" trendline if available
-            if trendline_x is not None and trendline_y_pred is not None:
-                import plotly.graph_objects as go # Import needed for go.Scatter
-                fig.add_trace(go.Scatter(
-                    x=trendline_x,
-                    y=trendline_y_pred,
-                    mode='lines',
-                    name='Trend (Drafted Players)',
-                    line=dict(color='rgba(255,255,255,0.6)', dash='dash') # Style the trendline
-                ))
-
-            # Update layout: Set fixed axes, invert Y axis
-            fig.update_layout(
-                xaxis_title="Overall Pick",
-                yaxis_title="Points Rank (Lower is Better)",
-                xaxis_range=[0, x_axis_limit],
-                yaxis_range=[y_axis_limit, 0], # Inverted Y axis with fixed limit
-                yaxis_autorange=False, # Disable autorange for Y
-                xaxis_autorange=False,  # Disable autorange for X
-                legend_title_text='Drafting Team Name'
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-             st.info("No 'drafted' players found to plot.")
+        st.header("Draft & Acquisition Analysis Results")
+        # Use modular plotting function
+        plot_draft_value(value_df, st)
 
         # --- Overall Value Tables (Based on Drafted Players) ---
         st.subheader("Overall Draft Value Analysis")
@@ -544,7 +294,6 @@ if draft_df is not None and stats_df is not None:
         else:
             st.info("No drafting teams found in the data for drafted players.")
 
-
         # --- NEW: Best Waiver/Trade Acquisitions Section ---
         st.header("Waiver Wire & Trade Analysis")
 
@@ -555,7 +304,6 @@ if draft_df is not None and stats_df is not None:
         st.subheader(f"Top {N_PICKS_DISPLAY} Overall Acquisitions (by Season Total Points)")
         st.markdown("_Players acquired via waiver/trade, ranked by their total points scored across the entire season._")
         if not waiver_records_df.empty:
-            # Get unique players acquired via waiver
             # Get unique players acquired via waiver, include their original DraftingTeamName
             unique_waiver_players = waiver_records_df[['name', 'TotalPoints', 'Overall Pick', 'DraftingTeamName']].drop_duplicates(subset=['name'])
             # Sort them by TotalPoints
@@ -586,7 +334,6 @@ if draft_df is not None and stats_df is not None:
         else:
             st.info("No waiver/trade acquisitions found.")
 
-
         # --- Updated Full Data Table ---
         st.subheader("Full Processed Data")
         st.markdown("_Includes all player-team records with acquisition type._")
@@ -602,18 +349,6 @@ if draft_df is not None and stats_df is not None:
             remaining_cols = [col for col in value_df.columns if col not in all_cols_ordered]
             # Display using the final value_df
             st.dataframe(value_df[all_cols_ordered + remaining_cols], use_container_width=True, hide_index=True)
-
-    else:
-        st.warning("Could not process data or calculate value scores.")
-        # Attempt to display intermediate data if available
-        if 'final_df' in locals() and final_df is not None:
-             st.header("Processed Data (Before Value Calculation)")
-             st.dataframe(final_df, hide_index=True)
-        elif 'merged_team_stats' in locals() and merged_team_stats is not None:
-             st.header("Merged Team Stats (Before Acquisition Type)")
-             st.dataframe(merged_team_stats, hide_index=True)
-        else:
-             st.info("No intermediate data available to display.")
 
 
 elif draft_df is None:
