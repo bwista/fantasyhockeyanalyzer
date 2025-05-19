@@ -37,8 +37,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 CONFIG_FILE_PATH = 'user_config.json'
 DRAFT_RESULTS_FILE = 'src/data/draft_results.json' # Updated path for JSON
 PLAYER_STATS_FILE = 'src/data/box_score_stats.json' # Updated path and extension
-TEAM_MAPPING_FILE = 'src/data/team_mapping.json' # Added path for team name to abbreviation mapping
-POINTS_COLUMN = 'TotalPoints' # Actual points column name after aggregation
+TEAM_MAPPING_FILE = 'src/data/team_mapping.json' # Added path for team Player to abbreviation mapping
+POINTS_COLUMN = 'TotalPoints' # Actual points column Player after aggregation
 N_PICKS_DISPLAY = 10 # Number of best/worst picks to show
 
 # --- Helper Functions ---
@@ -259,7 +259,7 @@ if draft_df is not None and stats_df is not None:
 
         col1, col2 = st.columns(2)
         # Define columns for concise display tables
-        display_cols_value = ['Overall Pick', 'name', 'DraftingTeamName', 'TotalPoints', 'PointsRank', 'ValueScore']
+        display_cols_value = ['Overall Pick', 'Player', 'DraftingTeamName', 'TotalPoints', 'PointsRank', 'ValueScore']
 
         with col1:
             st.markdown(f"**Top {N_PICKS_DISPLAY} Best Value Picks**")
@@ -305,11 +305,11 @@ if draft_df is not None and stats_df is not None:
         st.markdown("_Players acquired via waiver/trade, ranked by their total points scored across the entire season._")
         if not waiver_records_df.empty:
             # Get unique players acquired via waiver, include their original DraftingTeamName
-            unique_waiver_players = waiver_records_df[['name', 'TotalPoints', 'Overall Pick', 'DraftingTeamName']].drop_duplicates(subset=['name'])
+            unique_waiver_players = waiver_records_df[['Player', 'TotalPoints', 'Overall Pick', 'DraftingTeamName']].drop_duplicates(subset=['Player'])
             # Sort them by TotalPoints
             top_overall_acquisitions = unique_waiver_players.sort_values(by='TotalPoints', ascending=False)
             # Display
-            display_cols_overall_acq = ['name', 'TotalPoints', 'Overall Pick', 'DraftingTeamName']
+            display_cols_overall_acq = ['Player', 'TotalPoints', 'Overall Pick', 'DraftingTeamName']
             st.dataframe(top_overall_acquisitions.head(N_PICKS_DISPLAY)[display_cols_overall_acq], hide_index=True, use_container_width=True)
         else:
             st.info("No waiver/trade acquisitions found.")
@@ -327,7 +327,7 @@ if draft_df is not None and stats_df is not None:
                     # Sort by points scored for *this* team
                     team_acquisitions_df = team_acquisitions_df.sort_values(by='TeamPoints', ascending=False)
                     st.markdown(f"**Top {N_PICKS_DISPLAY} Acquisitions for {selected_acq_team} (by Points for Team)**")
-                    display_cols_team_acq = ['name', 'TeamPoints', 'FirstWeek', 'LastWeek'] # Show points for team and duration
+                    display_cols_team_acq = ['Player', 'TeamPoints', 'FirstWeek', 'LastWeek'] # Show points for team and duration
                     st.dataframe(team_acquisitions_df.head(N_PICKS_DISPLAY)[display_cols_team_acq], hide_index=True, use_container_width=True)
             else:
                 st.info("No teams found who made waiver/trade acquisitions.")
@@ -340,7 +340,7 @@ if draft_df is not None and stats_df is not None:
         with st.expander("Show Full Data Table"):
             # Define columns for the full table display
             all_cols_ordered = [
-                'name', 'team_abbrev', 'acquisition_type', 'TeamPoints', 'TotalPoints', # Core Info
+                'Player', 'team_abbrev', 'acquisition_type', 'TeamPoints', 'TotalPoints', # Core Info
                 'FirstWeek', 'LastWeek', # Stint Info
                 'Overall Pick', 'DraftingTeamName', 'DraftingTeamAbbrev', # Draft Info (if applicable)
                 'PointsRank', 'ValueScore' # Ranks & Value (if applicable)

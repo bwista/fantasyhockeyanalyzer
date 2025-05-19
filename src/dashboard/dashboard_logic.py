@@ -135,6 +135,8 @@ def process_data(draft_df, stats_df, team_map, st=None):
         )
         final_df['TotalPoints'] = final_df['TotalPoints'].fillna(0)
         value_df = calculate_value(final_df.copy(), 'TotalPoints')
+        final_df.rename(columns={'name':'Player'}, inplace=True)
+        value_df.rename(columns={'name':'Player'}, inplace=True)
         return final_df, value_df
     except Exception as e:
         if st: st.error(f"Error during data processing: {e}")
@@ -193,7 +195,7 @@ def plot_draft_value(value_df, st):
         fig = px.scatter(
             drafted_plot_df,
             x='Overall Pick', y='PointsRank', color='DraftingTeamName',
-            hover_data=['name', 'Overall Pick', 'PointsRank', 'DraftingTeamName', 'TotalPoints', 'ValueScore'],
+            hover_data=['Player', 'Overall Pick', 'PointsRank', 'DraftingTeamName', 'TotalPoints', 'ValueScore'],
             title="Draft Position vs. Season Points Rank (Drafted Players)",
             trendline=None, color_discrete_sequence=px.colors.qualitative.Bold
         )
