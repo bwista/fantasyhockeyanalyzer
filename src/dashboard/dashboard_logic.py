@@ -134,7 +134,7 @@ def process_data(draft_df, stats_df, team_map, st=None):
             on='name', how='left'
         )
         final_df['TotalPoints'] = final_df['TotalPoints'].fillna(0)
-        value_df = calculate_value(final_df.copy(), 'TotalPoints')
+        value_df = calculate_value(final_df.copy(), 'TeamPoints') # Use TeamPoints for ValueScore calculation
         final_df.rename(columns={'name':'Player'}, inplace=True)
         value_df.rename(columns={'name':'Player'}, inplace=True)
         return final_df, value_df
