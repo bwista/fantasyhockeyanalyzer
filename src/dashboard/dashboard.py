@@ -259,7 +259,7 @@ if draft_df is not None and stats_df is not None:
 
         col1, col2 = st.columns(2)
         # Define columns for concise display tables
-        display_cols_value = ['Overall Pick', 'Player', 'DraftingTeamName', 'TotalPoints', 'PointsRank', 'ValueScore']
+        display_cols_value = ['Overall Pick', 'Player', 'DraftingTeamName', 'TeamPoints', 'PointsRank', 'ValueScore']
 
         with col1:
             st.markdown(f"**Top {N_PICKS_DISPLAY} Best Value Picks**")
@@ -267,12 +267,37 @@ if draft_df is not None and stats_df is not None:
                  st.dataframe(drafted_value_df.head(N_PICKS_DISPLAY)[display_cols_value], use_container_width=True, hide_index=True)
             else:
                  st.info("No 'drafted' players found.")
+        # Filter drafted players for Worst Value Picks and subsequent analysis (e.g., Team-Specific)
+        # Players must have been held for at least 2 weeks (LastWeek - FirstWeek >= 3).
+        # This filter is applied *after* Best Value Picks are determined and *before* Worst Value Picks.
+        if not drafted_value_df.empty and 'FirstWeek' in drafted_value_df.columns and 'LastWeek' in drafted_value_df.columns:
+            # Ensure columns are numeric for calculation, coercing errors to NaN
+            # Using .loc to avoid SettingWithCopyWarning if drafted_value_df might be a slice
+            drafted_value_df.loc[:, 'FirstWeek'] = pd.to_numeric(drafted_value_df['FirstWeek'], errors='coerce')
+            drafted_value_df.loc[:, 'LastWeek'] = pd.to_numeric(drafted_value_df['LastWeek'], errors='coerce')
+
+            # Calculate hold duration.
+            # Rows where FirstWeek or LastWeek became NaN (due to coercion) will result in HoldDuration being NaN.
+            drafted_value_df.loc[:, 'HoldDuration'] = drafted_value_df['LastWeek'] - drafted_value_df['FirstWeek']
+
+            # Apply the filter: keep rows where HoldDuration is not NaN and is >= 3.
+            # This implicitly drops rows where FirstWeek or LastWeek was initially non-numeric or NaN.
+            drafted_value_df = drafted_value_df[drafted_value_df['HoldDuration'] >= 3].copy() # Use .copy() to ensure it's a new DataFrame
+
+            # Drop the temporary column as it's not needed for display
+            if 'HoldDuration' in drafted_value_df.columns:
+                drafted_value_df = drafted_value_df.drop(columns=['HoldDuration'])
+        
+        elif not drafted_value_df.empty: # This case means drafted_value_df was not empty, but FirstWeek/LastWeek columns were missing.
+            st.warning("Could not apply 'hold duration' filter for Worst Value Picks: 'FirstWeek' or 'LastWeek' columns missing from drafted players data.")
+        # If drafted_value_df was initially empty, it remains empty; the existing 'else' clauses in display blocks will handle it.
+
         with col2:
             st.markdown(f"**Top {N_PICKS_DISPLAY} Worst Value Picks**")
             if not drafted_value_df.empty:
                  st.dataframe(drafted_value_df.tail(N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], use_container_width=True, hide_index=True)
             else:
-                 st.info("No 'drafted' players found.")
+                 st.info("No 'drafted' players found matching the criteria (including hold duration).")
 
         # --- Team-Specific Draft Value Analysis (Based on Drafted Players) ---
         st.subheader("Team-Specific Draft Value Analysis")
@@ -284,13 +309,16 @@ if draft_df is not None and stats_df is not None:
                  team_value_df = drafted_value_df[drafted_value_df['DraftingTeamName'] == selected_draft_team].copy() # Filter by DraftingTeamName
                  st.markdown(f"**Draft Value Analysis for {selected_draft_team}**")
 
+                 # Show only half as many picks for team-specific analysis
+                 TEAM_N_PICKS_DISPLAY = max(1, N_PICKS_DISPLAY // 2)
+
                  col3, col4 = st.columns(2)
                  with col3:
-                     st.markdown(f"*Top {N_PICKS_DISPLAY} Best Value Picks*")
-                     st.dataframe(team_value_df.head(N_PICKS_DISPLAY)[display_cols_value], use_container_width=True, hide_index=True)
+                     st.markdown(f"*Top {TEAM_N_PICKS_DISPLAY} Best Value Picks*")
+                     st.dataframe(team_value_df.head(TEAM_N_PICKS_DISPLAY)[display_cols_value], use_container_width=True, hide_index=True)
                  with col4:
-                     st.markdown(f"*Top {N_PICKS_DISPLAY} Worst Value Picks*")
-                     st.dataframe(team_value_df.tail(N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], use_container_width=True, hide_index=True)
+                     st.markdown(f"*Top {TEAM_N_PICKS_DISPLAY} Worst Value Picks*")
+                     st.dataframe(team_value_df.tail(TEAM_N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], use_container_width=True, hide_index=True)
         else:
             st.info("No drafting teams found in the data for drafted players.")
 
