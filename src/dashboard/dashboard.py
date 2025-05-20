@@ -267,30 +267,6 @@ if draft_df is not None and stats_df is not None:
                  st.dataframe(drafted_value_df.head(N_PICKS_DISPLAY)[display_cols_value], use_container_width=True, hide_index=True)
             else:
                  st.info("No 'drafted' players found.")
-        # Filter drafted players for Worst Value Picks and subsequent analysis (e.g., Team-Specific)
-        # Players must have been held for at least 2 weeks (LastWeek - FirstWeek >= 3).
-        # This filter is applied *after* Best Value Picks are determined and *before* Worst Value Picks.
-        if not drafted_value_df.empty and 'FirstWeek' in drafted_value_df.columns and 'LastWeek' in drafted_value_df.columns:
-            # Ensure columns are numeric for calculation, coercing errors to NaN
-            # Using .loc to avoid SettingWithCopyWarning if drafted_value_df might be a slice
-            drafted_value_df.loc[:, 'FirstWeek'] = pd.to_numeric(drafted_value_df['FirstWeek'], errors='coerce')
-            drafted_value_df.loc[:, 'LastWeek'] = pd.to_numeric(drafted_value_df['LastWeek'], errors='coerce')
-
-            # Calculate hold duration.
-            # Rows where FirstWeek or LastWeek became NaN (due to coercion) will result in HoldDuration being NaN.
-            drafted_value_df.loc[:, 'HoldDuration'] = drafted_value_df['LastWeek'] - drafted_value_df['FirstWeek']
-
-            # Apply the filter: keep rows where HoldDuration is not NaN and is >= 3.
-            # This implicitly drops rows where FirstWeek or LastWeek was initially non-numeric or NaN.
-            drafted_value_df = drafted_value_df[drafted_value_df['HoldDuration'] >= 3].copy() # Use .copy() to ensure it's a new DataFrame
-
-            # Drop the temporary column as it's not needed for display
-            if 'HoldDuration' in drafted_value_df.columns:
-                drafted_value_df = drafted_value_df.drop(columns=['HoldDuration'])
-        
-        elif not drafted_value_df.empty: # This case means drafted_value_df was not empty, but FirstWeek/LastWeek columns were missing.
-            st.warning("Could not apply 'hold duration' filter for Worst Value Picks: 'FirstWeek' or 'LastWeek' columns missing from drafted players data.")
-        # If drafted_value_df was initially empty, it remains empty; the existing 'else' clauses in display blocks will handle it.
 
         with col2:
             st.markdown(f"**Top {N_PICKS_DISPLAY} Worst Value Picks**")

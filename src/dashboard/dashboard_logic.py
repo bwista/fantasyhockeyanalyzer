@@ -206,7 +206,7 @@ def plot_draft_value(value_df, st):
             ))
         fig.update_layout(
             xaxis_title="Overall Pick", yaxis_title="Points Rank (Lower is Better)",
-            xaxis_range=[0, x_axis_limit], yaxis_range=[y_axis_limit, 0],
+            xaxis_range=[0, x_axis_limit], yaxis_range=[0, y_axis_limit],
             yaxis_autorange=False, xaxis_autorange=False, legend_title_text='Drafting Team Name'
         )
         st.plotly_chart(fig, use_container_width=True)
