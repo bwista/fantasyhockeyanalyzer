@@ -63,8 +63,8 @@ def load_data(draft_file, stats_file, mapping_file):
         # Load from JSON instead of CSV
         draft_df = pd.read_json(draft_file, orient='records')
         # Calculate Overall Pick based on DataFrame index after loading
-        draft_df['Overall Pick'] = draft_df.index + 1
-        show_temporary_message("success", f"Loaded draft data from {draft_file} (JSON) and added 'Overall Pick'.", 0.25)
+        draft_df['DraftPick'] = draft_df.index + 1
+        show_temporary_message("success", f"Loaded draft data from {draft_file} (JSON) and added 'DraftPick'.", 0.25)
     except FileNotFoundError:
         st.error(f"Error: Draft results file not found at {draft_file}.")
         return None, None, None
@@ -116,12 +116,12 @@ def calculate_value(df, points_col):
         return None
 
     # Ensure required columns exist
-    required_cols = [points_col, 'Overall Pick', 'acquisition_type']
+    required_cols = [points_col, 'DraftPick', 'acquisition_type']
     if not all(col in df.columns for col in required_cols):
         st.error(f"Cannot calculate value: Missing one or more required columns: {required_cols}")
         # Add missing columns with default values if possible, or return None
         if points_col not in df.columns: df[points_col] = 0
-        if 'Overall Pick' not in df.columns: df['Overall Pick'] = np.nan
+        if 'DraftPick' not in df.columns: df['DraftPick'] = np.nan
         if 'acquisition_type' not in df.columns: df['acquisition_type'] = 'unknown'
         # Consider returning None if critical columns are missing and cannot be defaulted reasonably
         # return None
@@ -129,14 +129,14 @@ def calculate_value(df, points_col):
     # Ensure points column is numeric and fill NaNs
     df[points_col] = pd.to_numeric(df[points_col], errors='coerce').fillna(0)
     # Ensure Overall Pick is numeric (can be NaN for non-drafted)
-    df['Overall Pick'] = pd.to_numeric(df['Overall Pick'], errors='coerce')
+    df['DraftPick'] = pd.to_numeric(df['DraftPick'], errors='coerce')
 
 
     # Calculate Points Rank based on overall TotalPoints (higher points = better rank)
     df['PointsRank'] = df[points_col].rank(method='dense', ascending=False)
 
     # Draft Rank is the overall pick number (will be NaN for non-drafted)
-    df['DraftRank'] = df['Overall Pick']
+    df['DraftRank'] = df['DraftPick']
 
     # Calculate Value Score only for drafted players
     # Initialize ValueScore column with NaN
@@ -164,7 +164,7 @@ def determine_acquisition_type(group):
 
         # Check conditions for the *first* record of the player
         if i == group.index[0]:
-            if pd.notna(row['Overall Pick']) and row['team_abbrev'] == row['DraftingTeamAbbrev']: # Logic remains based on Abbrev
+            if pd.notna(row['DraftPick']) and row['team_abbrev'] == row['DraftingTeamAbbrev']: # Logic remains based on Abbrev
                 current_type = 'drafted'
                 is_drafted = True
             # Else: remains 'waiver' (undrafted or drafted but first record doesn't match drafting team)
@@ -259,7 +259,7 @@ if draft_df is not None and stats_df is not None:
 
         col1, col2 = st.columns(2)
         # Define columns for concise display tables
-        display_cols_value = ['Overall Pick', 'Player', 'DraftingTeamName', 'TeamPoints', 'PointsRank', 'ValueScore']
+        display_cols_value = ['DraftPick', 'Player', 'DraftingTeamName', 'TeamPoints', 'PointsRank', 'ValueScore']
 
         with col1:
             st.markdown(f"**Top {N_PICKS_DISPLAY} Best Value Picks**")
@@ -309,11 +309,11 @@ if draft_df is not None and stats_df is not None:
         st.markdown("_Players acquired via waiver/trade, ranked by their total points scored across the entire season._")
         if not waiver_records_df.empty:
             # Get unique players acquired via waiver, include their original DraftingTeamName
-            unique_waiver_players = waiver_records_df[['Player', 'TotalPoints', 'Overall Pick', 'DraftingTeamName']].drop_duplicates(subset=['Player'])
+            unique_waiver_players = waiver_records_df[['Player', 'TotalPoints', 'DraftPick', 'DraftingTeamName']].drop_duplicates(subset=['Player'])
             # Sort them by TotalPoints
             top_overall_acquisitions = unique_waiver_players.sort_values(by='TotalPoints', ascending=False)
             # Display
-            display_cols_overall_acq = ['Player', 'TotalPoints', 'Overall Pick', 'DraftingTeamName']
+            display_cols_overall_acq = ['Player', 'TotalPoints', 'DraftPick', 'DraftingTeamName']
             st.dataframe(top_overall_acquisitions.head(N_PICKS_DISPLAY)[display_cols_overall_acq], hide_index=True, use_container_width=True)
         else:
             st.info("No waiver/trade acquisitions found.")
@@ -346,7 +346,7 @@ if draft_df is not None and stats_df is not None:
             all_cols_ordered = [
                 'Player', 'team_abbrev', 'acquisition_type', 'TeamPoints', 'TotalPoints', # Core Info
                 'FirstWeek', 'LastWeek', # Stint Info
-                'Overall Pick', 'DraftingTeamName', 'DraftingTeamAbbrev', # Draft Info (if applicable)
+                'DraftPick', 'DraftingTeamName', 'DraftingTeamAbbrev', # Draft Info (if applicable)
                 'PointsRank', 'ValueScore' # Ranks & Value (if applicable)
             ]
             # Add any remaining columns automatically

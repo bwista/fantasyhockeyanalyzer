@@ -73,8 +73,8 @@ def load_data(draft_file, stats_file, mapping_file, st=None):
     draft_df, stats_df, team_map = None, None, None
     try:
         draft_df = pd.read_json(draft_file, orient='records')
-        draft_df['Overall Pick'] = draft_df.index + 1
-        if st: st.success(f"Loaded draft data from {draft_file} (JSON) and added 'Overall Pick'.")
+        draft_df['DraftPick'] = draft_df.index + 1
+        if st: st.success(f"Loaded draft data from {draft_file} (JSON) and added 'Pick'.")
     except Exception as e:
         if st: st.error(f"Error loading {draft_file}: {e}")
         return None, None, None
@@ -111,7 +111,7 @@ def process_data(draft_df, stats_df, team_map, st=None):
             TotalPoints=('total_points', 'sum')
         ).reset_index()
         # Prepare draft data
-        draft_prepared_df = draft_df[['Player', 'Overall Pick', 'Team']].copy()
+        draft_prepared_df = draft_df[['Player', 'DraftPick', 'Team']].copy()
         draft_prepared_df.rename(columns={'Player': 'name', 'Team': 'DraftingTeamName'}, inplace=True)
         if team_map is not None:
             draft_prepared_df['DraftingTeamAbbrev'] = draft_prepared_df['DraftingTeamName'].map(team_map)
@@ -122,7 +122,7 @@ def process_data(draft_df, stats_df, team_map, st=None):
         # Merge draft info
         merged_team_stats = pd.merge(
             player_team_stats,
-            draft_prepared_df[['name', 'Overall Pick', 'DraftingTeamAbbrev', 'DraftingTeamName']],
+            draft_prepared_df[['name', 'DraftPick', 'DraftingTeamAbbrev', 'DraftingTeamName']],
             on='name', how='left'
         )
         # Acquisition type
@@ -135,7 +135,7 @@ def process_data(draft_df, stats_df, team_map, st=None):
         )
         final_df['TotalPoints'] = final_df['TotalPoints'].fillna(0)
         value_df = calculate_value(final_df.copy(), 'TeamPoints') # Use TeamPoints for ValueScore calculation
-        final_df.rename(columns={'name':'Player'}, inplace=True)
+        final_df.rename(columns={'name':'Player', 'DraftPick':'Pick'}, inplace=True)
         value_df.rename(columns={'name':'Player'}, inplace=True)
         return final_df, value_df
     except Exception as e:
@@ -148,7 +148,7 @@ def determine_acquisition_type(group):
     for i, row in group.iterrows():
         current_type = 'waiver'
         if i == group.index[0]:
-            if pd.notna(row['Overall Pick']) and row['team_abbrev'] == row['DraftingTeamAbbrev']:
+            if pd.notna(row['DraftPick']) and row['team_abbrev'] == row['DraftingTeamAbbrev']:
                 current_type = 'drafted'
         acquisition_types.append(current_type)
     group['acquisition_type'] = acquisition_types
@@ -157,14 +157,14 @@ def determine_acquisition_type(group):
 def calculate_value(df, points_col):
     if df is None or df.empty:
         return None
-    required_cols = [points_col, 'Overall Pick', 'acquisition_type']
+    required_cols = [points_col, 'DraftPick', 'acquisition_type']
     for col in required_cols:
         if col not in df.columns:
             df[col] = 0 if col == points_col else np.nan
     df[points_col] = pd.to_numeric(df[points_col], errors='coerce').fillna(0)
-    df['Overall Pick'] = pd.to_numeric(df['Overall Pick'], errors='coerce')
+    df['DraftPick'] = pd.to_numeric(df['DraftPick'], errors='coerce')
     df['PointsRank'] = df[points_col].rank(method='dense', ascending=False)
-    df['DraftRank'] = df['Overall Pick']
+    df['DraftRank'] = df['DraftPick']
     df['ValueScore'] = np.nan
     drafted_mask = (df['acquisition_type'] == 'drafted') & df['DraftRank'].notna() & df['PointsRank'].notna()
     df.loc[drafted_mask, 'ValueScore'] = df.loc[drafted_mask, 'DraftRank'] - df.loc[drafted_mask, 'PointsRank']
@@ -176,10 +176,10 @@ def plot_draft_value(value_df, st):
     st.markdown("_This plot shows only players who were initially drafted and plots their draft position against their final points rank for the season._")
     drafted_plot_df = value_df[value_df['acquisition_type'] == 'drafted'].copy()
     trendline_x = trendline_y_pred = None
-    if not drafted_plot_df.empty and 'Overall Pick' in drafted_plot_df.columns and 'PointsRank' in drafted_plot_df.columns:
-        ols_data = drafted_plot_df[['Overall Pick', 'PointsRank']].dropna()
+    if not drafted_plot_df.empty and 'DraftPick' in drafted_plot_df.columns and 'PointsRank' in drafted_plot_df.columns:
+        ols_data = drafted_plot_df[['DraftPick', 'PointsRank']].dropna()
         if not ols_data.empty and len(ols_data) > 1:
-            X = ols_data['Overall Pick']
+            X = ols_data['DraftPick']
             y = ols_data['PointsRank']
             X_with_const = sm.add_constant(X)
             model = sm.OLS(y, X_with_const)
@@ -188,14 +188,14 @@ def plot_draft_value(value_df, st):
             trendline_x_with_const = sm.add_constant(trendline_x)
             trendline_y_pred = trendline_results.predict(trendline_x_with_const)
     if not drafted_plot_df.empty:
-        max_pick = drafted_plot_df['Overall Pick'].max() if not drafted_plot_df.empty else 160
+        max_pick = drafted_plot_df['DraftPick'].max() if not drafted_plot_df.empty else 160
         max_rank = value_df['PointsRank'].max() if not value_df.empty else 160
         x_axis_limit = max_pick * 1.2
         y_axis_limit = max_rank * 1.2
         fig = px.scatter(
             drafted_plot_df,
-            x='Overall Pick', y='PointsRank', color='DraftingTeamName',
-            hover_data=['Player', 'Overall Pick', 'PointsRank', 'DraftingTeamName', 'TotalPoints', 'ValueScore'],
+            x='DraftPick', y='PointsRank', color='DraftingTeamName',
+            hover_data=['Player', 'DraftPick', 'PointsRank', 'DraftingTeamName', 'TotalPoints', 'ValueScore'],
             title="Draft Position vs. Season Points Rank (Drafted Players)",
             trendline=None, color_discrete_sequence=px.colors.qualitative.Bold
         )
@@ -205,7 +205,7 @@ def plot_draft_value(value_df, st):
                 line=dict(color='rgba(255,255,255,0.6)', dash='dash')
             ))
         fig.update_layout(
-            xaxis_title="Overall Pick", yaxis_title="Points Rank (Lower is Better)",
+            xaxis_title="Draft Pick", yaxis_title="Points Rank",
             xaxis_range=[0, x_axis_limit], yaxis_range=[0, y_axis_limit],
             yaxis_autorange=False, xaxis_autorange=False, legend_title_text='Drafting Team Name'
         )
