@@ -172,8 +172,8 @@ def calculate_value(df, points_col):
 
 # --- Plotting/Display Functions ---
 def plot_draft_value(value_df, st):
-    st.subheader("Draft Value: Overall Pick vs. Fantasy Points Rank")
-    st.markdown("_This plot shows only players who were initially drafted and plots their draft position against their final points rank for the season._")
+    st.subheader("Draft Value: Draft Pick vs. Rank(Fantasy Points)")
+    st.markdown("_This plot compares drafted players' initial position to their final season rank._")
     drafted_plot_df = value_df[value_df['acquisition_type'] == 'drafted'].copy()
     trendline_x = trendline_y_pred = None
     if not drafted_plot_df.empty and 'DraftPick' in drafted_plot_df.columns and 'PointsRank' in drafted_plot_df.columns:
@@ -190,13 +190,13 @@ def plot_draft_value(value_df, st):
     if not drafted_plot_df.empty:
         max_pick = drafted_plot_df['DraftPick'].max() if not drafted_plot_df.empty else 160
         max_rank = value_df['PointsRank'].max() if not value_df.empty else 160
-        x_axis_limit = max_pick * 1.2
-        y_axis_limit = max_rank * 1.2
+        x_axis_limit = max_pick * 1.05
+        y_axis_limit = max_rank * 1.05
         fig = px.scatter(
             drafted_plot_df,
             x='DraftPick', y='PointsRank', color='DraftingTeamName',
             hover_data=['Player', 'DraftPick', 'PointsRank', 'DraftingTeamName', 'TotalPoints', 'ValueScore'],
-            title="Draft Position vs. Season Points Rank (Drafted Players)",
+            # title="Draft Position vs. Season Points Rank",
             trendline=None, color_discrete_sequence=px.colors.qualitative.Bold
         )
         if trendline_x is not None and trendline_y_pred is not None:

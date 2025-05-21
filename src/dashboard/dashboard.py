@@ -246,9 +246,7 @@ if draft_df is not None and stats_df is not None:
 
     # --- Display Results ---
     if value_df is not None:
-        st.header("Draft & Acquisition Analysis Results")
-        # Use modular plotting function
-        plot_draft_value(value_df, st)
+        plot_draft_value(value_df, st) # Use modular plotting function
 
         # --- Overall Value Tables (Based on Drafted Players) ---
         st.subheader("Overall Draft Value Analysis")
