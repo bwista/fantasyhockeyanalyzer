@@ -101,11 +101,20 @@ def process_data(draft_df, stats_df, team_map, st=None):
         return None, None
     try:
         # Aggregate per player/team
-        player_team_stats = stats_df.groupby(['name', 'team_abbrev']).agg(
+        player_team_stats = stats_df.groupby(['name', 'team_abbrev', 'position']).agg(
             TeamPoints=('total_points', 'sum'),
             FirstWeek=('week', 'min'),
             LastWeek=('week', 'max')
         ).reset_index()
+        # Map position values to F, D, G
+        position_map = {
+            'Left Wing': 'F',
+            'Right Wing': 'F',
+            'Center': 'F',
+            'Defense': 'D',
+            'Goalie': 'G'
+        }
+        player_team_stats['position'] = player_team_stats['position'].replace(position_map)
         # Aggregate overall player stats
         total_player_stats = stats_df.groupby('name').agg(
             TotalPoints=('total_points', 'sum')
@@ -135,8 +144,8 @@ def process_data(draft_df, stats_df, team_map, st=None):
         )
         final_df['TotalPoints'] = final_df['TotalPoints'].fillna(0)
         value_df = calculate_value(final_df.copy(), 'TeamPoints') # Use TeamPoints for ValueScore calculation
-        final_df.rename(columns={'name':'Player', 'DraftPick':'Pick'}, inplace=True)
-        value_df.rename(columns={'name':'Player'}, inplace=True)
+        final_df.rename(columns={'name':'Player', 'DraftPick':'Pick', 'position':'Pos'}, inplace=True)
+        value_df.rename(columns={'name':'Player', 'position':'Pos'}, inplace=True)
         return final_df, value_df
     except Exception as e:
         if st: st.error(f"Error during data processing: {e}")

@@ -257,7 +257,7 @@ if draft_df is not None and stats_df is not None:
 
         col1, col2 = st.columns(2)
         # Define columns for concise display tables
-        display_cols_value = ['DraftPick', 'Player', 'DraftingTeamName', 'TeamPoints', 'PointsRank', 'ValueScore']
+        display_cols_value = ['DraftPick', 'Player', 'Pos', 'DraftingTeamName', 'TeamPoints', 'PointsRank', 'ValueScore']
 
         with col1:
             st.markdown(f"**Top {N_PICKS_DISPLAY} Best Value Picks**")
