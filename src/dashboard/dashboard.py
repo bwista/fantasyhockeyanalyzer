@@ -257,7 +257,7 @@ if draft_df is not None and stats_df is not None:
 
         col1, col2 = st.columns(2)
         # Define columns for concise display tables
-        display_cols_value = ['DraftPick', 'Player', 'Pos', 'DraftingTeamName', 'TeamPoints', 'PointsRank', 'ValueScore']
+        display_cols_value = ['Pick', 'Player', 'Pos', 'Team', 'TeamPoints', 'PointsRank', 'ValueScore']
 
         with col1:
             st.markdown(f"**Top {N_PICKS_DISPLAY} Best Value Picks**")
@@ -276,11 +276,11 @@ if draft_df is not None and stats_df is not None:
         # --- Team-Specific Draft Value Analysis (Based on Drafted Players) ---
         st.subheader("Team-Specific Draft Value Analysis")
         # Get drafting teams from the drafted subset
-        drafting_teams = sorted(drafted_value_df['DraftingTeamName'].dropna().unique()) # Use DraftingTeamName
+        drafting_teams = sorted(drafted_value_df['Team'].dropna().unique()) # Use Team
         if drafting_teams:
              selected_draft_team = st.selectbox('Select Drafting Team:', drafting_teams) # Shows full names
              if selected_draft_team:
-                 team_value_df = drafted_value_df[drafted_value_df['DraftingTeamName'] == selected_draft_team].copy() # Filter by DraftingTeamName
+                 team_value_df = drafted_value_df[drafted_value_df['Team'] == selected_draft_team].copy() # Filter by Team
                  st.markdown(f"**Draft Value Analysis for {selected_draft_team}**")
 
                  # Show only half as many picks for team-specific analysis
@@ -306,12 +306,12 @@ if draft_df is not None and stats_df is not None:
         st.subheader(f"Top {N_PICKS_DISPLAY} Overall Acquisitions (by Season Total Points)")
         st.markdown("_Players acquired via waiver/trade, ranked by their total points scored across the entire season._")
         if not waiver_records_df.empty:
-            # Get unique players acquired via waiver, include their original DraftingTeamName
-            unique_waiver_players = waiver_records_df[['Player', 'TotalPoints', 'DraftPick', 'DraftingTeamName']].drop_duplicates(subset=['Player'])
-            # Sort them by TotalPoints
-            top_overall_acquisitions = unique_waiver_players.sort_values(by='TotalPoints', ascending=False)
+            # Get unique players acquired via waiver, include their original Team
+            unique_waiver_players = waiver_records_df[['Player', 'TeamPoints', 'PickupTeamName']].drop_duplicates(subset=['Player'])
+            # Sort them by TeamPoints
+            top_overall_acquisitions = unique_waiver_players.sort_values(by='TeamPoints', ascending=False)
             # Display
-            display_cols_overall_acq = ['Player', 'TotalPoints', 'DraftPick', 'DraftingTeamName']
+            display_cols_overall_acq = ['Player', 'TeamPoints', 'PickupTeamName']
             st.dataframe(top_overall_acquisitions.head(N_PICKS_DISPLAY)[display_cols_overall_acq], hide_index=True, use_container_width=True)
         else:
             st.info("No waiver/trade acquisitions found.")
@@ -344,7 +344,7 @@ if draft_df is not None and stats_df is not None:
             all_cols_ordered = [
                 'Player', 'team_abbrev', 'acquisition_type', 'TeamPoints', 'TotalPoints', # Core Info
                 'FirstWeek', 'LastWeek', # Stint Info
-                'DraftPick', 'DraftingTeamName', 'DraftingTeamAbbrev', # Draft Info (if applicable)
+                'Pick', 'Team', 'DraftingTeamAbbrev', # Draft Info (if applicable)
                 'PointsRank', 'ValueScore' # Ranks & Value (if applicable)
             ]
             # Add any remaining columns automatically

@@ -142,10 +142,18 @@ def process_data(draft_df, stats_df, team_map, st=None):
             total_player_stats,
             on='name', how='left'
         )
+        if team_map is not None:
+            # Reverse the team_map: abbreviation -> team name
+            abbrev_to_team = {abbrev: name for name, abbrev in team_map.items()}
+            final_df['PickupTeamName'] = final_df['team_abbrev'].map(abbrev_to_team)
+            unmapped_mask = final_df['PickupTeamName'].isna()
+            final_df.loc[unmapped_mask, 'PickupTeamName'] = 'UNMAPPED_ABBREV'
+        else:
+            final_df['PickupTeamName'] = 'NO_TEAM_MAP_ABBREV'
         final_df['TotalPoints'] = final_df['TotalPoints'].fillna(0)
         value_df = calculate_value(final_df.copy(), 'TeamPoints') # Use TeamPoints for ValueScore calculation
-        final_df.rename(columns={'name':'Player', 'DraftPick':'Pick', 'position':'Pos'}, inplace=True)
-        value_df.rename(columns={'name':'Player', 'position':'Pos'}, inplace=True)
+        final_df.rename(columns={'name':'Player', 'DraftPick':'Pick', 'position':'Pos', 'DraftingTeamName':'Team'}, inplace=True)
+        value_df.rename(columns={'name':'Player', 'DraftPick':'Pick', 'position':'Pos', 'DraftingTeamName':'Team'}, inplace=True)
         return final_df, value_df
     except Exception as e:
         if st: st.error(f"Error during data processing: {e}")
@@ -173,22 +181,21 @@ def calculate_value(df, points_col):
     df[points_col] = pd.to_numeric(df[points_col], errors='coerce').fillna(0)
     df['DraftPick'] = pd.to_numeric(df['DraftPick'], errors='coerce')
     df['PointsRank'] = df[points_col].rank(method='dense', ascending=False)
-    df['DraftRank'] = df['DraftPick']
     df['ValueScore'] = np.nan
-    drafted_mask = (df['acquisition_type'] == 'drafted') & df['DraftRank'].notna() & df['PointsRank'].notna()
-    df.loc[drafted_mask, 'ValueScore'] = df.loc[drafted_mask, 'DraftRank'] - df.loc[drafted_mask, 'PointsRank']
+    drafted_mask = (df['acquisition_type'] == 'drafted') & df['DraftPick'].notna() & df['PointsRank'].notna()
+    df.loc[drafted_mask, 'ValueScore'] = df.loc[drafted_mask, 'DraftPick'] - df.loc[drafted_mask, 'PointsRank']
     return df
 
 # --- Plotting/Display Functions ---
 def plot_draft_value(value_df, st):
-    st.subheader("Draft Value: Draft Pick vs. Rank(Fantasy Points)")
+    st.subheader("Draft Value: Pick vs. Rank(Fantasy Points)")
     st.markdown("_This plot compares drafted players' initial position to their final season rank._")
     drafted_plot_df = value_df[value_df['acquisition_type'] == 'drafted'].copy()
     trendline_x = trendline_y_pred = None
-    if not drafted_plot_df.empty and 'DraftPick' in drafted_plot_df.columns and 'PointsRank' in drafted_plot_df.columns:
-        ols_data = drafted_plot_df[['DraftPick', 'PointsRank']].dropna()
+    if not drafted_plot_df.empty and 'Pick' in drafted_plot_df.columns and 'PointsRank' in drafted_plot_df.columns:
+        ols_data = drafted_plot_df[['Pick', 'PointsRank']].dropna()
         if not ols_data.empty and len(ols_data) > 1:
-            X = ols_data['DraftPick']
+            X = ols_data['Pick']
             y = ols_data['PointsRank']
             X_with_const = sm.add_constant(X)
             model = sm.OLS(y, X_with_const)
@@ -197,14 +204,14 @@ def plot_draft_value(value_df, st):
             trendline_x_with_const = sm.add_constant(trendline_x)
             trendline_y_pred = trendline_results.predict(trendline_x_with_const)
     if not drafted_plot_df.empty:
-        max_pick = drafted_plot_df['DraftPick'].max() if not drafted_plot_df.empty else 160
+        max_pick = drafted_plot_df['Pick'].max() if not drafted_plot_df.empty else 160
         max_rank = value_df['PointsRank'].max() if not value_df.empty else 160
         x_axis_limit = max_pick * 1.05
         y_axis_limit = max_rank * 1.05
         fig = px.scatter(
             drafted_plot_df,
-            x='DraftPick', y='PointsRank', color='DraftingTeamName',
-            hover_data=['Player', 'DraftPick', 'PointsRank', 'DraftingTeamName', 'TotalPoints', 'ValueScore'],
+            x='Pick', y='PointsRank', color='Team',
+            hover_data=['Player', 'Pick', 'PointsRank', 'Team', 'TotalPoints', 'ValueScore'],
             # title="Draft Position vs. Season Points Rank",
             trendline=None, color_discrete_sequence=px.colors.qualitative.Bold
         )
@@ -216,7 +223,7 @@ def plot_draft_value(value_df, st):
         fig.update_layout(
             xaxis_title="Draft Pick", yaxis_title="Points Rank",
             xaxis_range=[0, x_axis_limit], yaxis_range=[0, y_axis_limit],
-            yaxis_autorange=False, xaxis_autorange=False, legend_title_text='Drafting Team Name'
+            yaxis_autorange=False, xaxis_autorange=False, legend_title_text='Team Name'
         )
         st.plotly_chart(fig, use_container_width=True)
     else:
