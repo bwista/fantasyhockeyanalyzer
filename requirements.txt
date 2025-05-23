@@ -7,3 +7,5 @@ espn-api>=0.44.1
 streamlit>=1.12.0
 statsmodels>=0.14.0 # Added for OLS trendline
 plotly>=6.0.1
+pytest>=7.0.0
+pytest-cov>=4.0.0
