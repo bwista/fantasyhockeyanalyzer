@@ -131,7 +131,6 @@ def calculate_value(df, points_col):
     # Ensure Overall Pick is numeric (can be NaN for non-drafted)
     df['DraftPick'] = pd.to_numeric(df['DraftPick'], errors='coerce')
 
-
     # Calculate Points Rank based on overall TotalPoints (higher points = better rank)
     df['PointsRank'] = df[points_col].rank(method='dense', ascending=False)
 
@@ -179,181 +178,197 @@ def determine_acquisition_type(group):
 
 # --- Streamlit App ---
 st.set_page_config(layout="wide")
-st.title('🏒 Fantasy Hockey Draft & Acquisition Analysis') # Updated Title
+st.title('🏒 Fantasy Hockey Draft & Acquisition Analysis')
 
-# --- Load User Configuration ---
-config_placeholder = st.empty()  # Create a placeholder for the config section
-with config_placeholder.container():
-    st.subheader("Configuration")
-    config = None
-    try:
-        with open(CONFIG_FILE_PATH, 'r') as f:
-            config = json.load(f)
-        st.success(f"Loaded configuration from {CONFIG_FILE_PATH}")
-        # Optionally show config details here if needed
-    except FileNotFoundError:
-        st.error(f"ERROR: Configuration file not found at {CONFIG_FILE_PATH}. Please create it.")
+# --- Create Tabs ---
+draft_tab, team_tab = st.tabs(["📊 Draft", "🏒 Team"])
+
+with draft_tab:
+    # --- Load User Configuration ---
+    config_placeholder = st.empty()  # Create a placeholder for the config section
+    with config_placeholder.container():
+        st.subheader("Configuration")
+        config = None
+        try:
+            with open(CONFIG_FILE_PATH, 'r') as f:
+                config = json.load(f)
+            st.success(f"Loaded configuration from {CONFIG_FILE_PATH}")
+            # Optionally show config details here if needed
+        except FileNotFoundError:
+            st.error(f"ERROR: Configuration file not found at {CONFIG_FILE_PATH}. Please create it.")
+            st.stop()
+        except json.JSONDecodeError:
+            st.error(f"ERROR: Could not decode JSON from {CONFIG_FILE_PATH}. Please check its format.")
+            st.stop()
+        except Exception as e:
+            st.error(f"ERROR: An unexpected error occurred loading {CONFIG_FILE_PATH}: {e}")
+            st.stop()
+
+    # If we reach here, config is loaded and valid, so clear the section:
+    config_placeholder.empty()
+
+    # Extract essential config values
+    league_id = config.get('LEAGUE_ID')
+    year = config.get('YEAR')
+    swid = config.get('SWID')
+    espn_s2 = config.get('ESPN_S2')
+
+    if not all([league_id, year, swid, espn_s2]):
+        st.error("ERROR: Configuration file is missing one or more required keys: LEAGUE_ID, YEAR, SWID, ESPN_S2.")
         st.stop()
-    except json.JSONDecodeError:
-        st.error(f"ERROR: Could not decode JSON from {CONFIG_FILE_PATH}. Please check its format.")
-        st.stop()
-    except Exception as e:
-        st.error(f"ERROR: An unexpected error occurred loading {CONFIG_FILE_PATH}: {e}")
-        st.stop()
 
-# If we reach here, config is loaded and valid, so clear the section:
-config_placeholder.empty()
+    # --- Data File Checks and Generation ---
+    data_loading_placeholder = st.empty()  # Create a placeholder for the data loading section
+    with data_loading_placeholder.container():
+        st.subheader("Data Loading & Preparation")
 
-# Extract essential config values
-league_id = config.get('LEAGUE_ID')
-year = config.get('YEAR')
-swid = config.get('SWID')
-espn_s2 = config.get('ESPN_S2')
+        # Use new modular function for all data file checks and loading
+        draft_df, stats_df, team_map = ensure_data_files_exist(
+            config,
+            DRAFT_RESULTS_FILE,
+            PLAYER_STATS_FILE,
+            TEAM_MAPPING_FILE,
+            parse_draft_results,
+            fetch_box_score_stats,
+            fetch_and_save_team_info,
+            START_WEEK,
+            END_WEEK,
+            RATE_LIMIT_DELAY,
+            TEAM_INFO_OUTPUT_DIR,
+            TEAM_INFO_OUTPUT_FILE,
+            st=st
+        )
+    # If we reach here, all data files are loaded/generated, so clear the section:
+    data_loading_placeholder.empty()
 
-if not all([league_id, year, swid, espn_s2]):
-    st.error("ERROR: Configuration file is missing one or more required keys: LEAGUE_ID, YEAR, SWID, ESPN_S2.")
-    st.stop()
+    # Proceed only if draft and stats data are loaded
+    if draft_df is not None and stats_df is not None:
+        # --- Data Processing Steps ---
+        final_df, value_df = process_data(draft_df, stats_df, team_map, st=st)
 
+        # --- Display Results ---
+        if value_df is not None:
+            plot_draft_value(value_df, st) # Use modular plotting function
 
-# --- Data File Checks and Generation ---
-data_loading_placeholder = st.empty()  # Create a placeholder for the data loading section
-with data_loading_placeholder.container():
-    st.subheader("Data Loading & Preparation")
+            # --- Overall Value Tables (Based on Drafted Players) ---
+            st.subheader("Overall Draft Value Analysis")
+            st.markdown("_Based on players' performance relative to their draft position (`ValueScore = DraftRank - PointsRank`). Higher is better._")
 
-    # Use new modular function for all data file checks and loading
-    draft_df, stats_df, team_map = ensure_data_files_exist(
-        config,
-        DRAFT_RESULTS_FILE,
-        PLAYER_STATS_FILE,
-        TEAM_MAPPING_FILE,
-        parse_draft_results,
-        fetch_box_score_stats,
-        fetch_and_save_team_info,
-        START_WEEK,
-        END_WEEK,
-        RATE_LIMIT_DELAY,
-        TEAM_INFO_OUTPUT_DIR,
-        TEAM_INFO_OUTPUT_FILE,
-        st=st
-    )
-# If we reach here, all data files are loaded/generated, so clear the section:
-data_loading_placeholder.empty()
+            # Filter for drafted records for value tables
+            drafted_value_df = value_df[value_df['acquisition_type'] == 'drafted'].sort_values(by='ValueScore', ascending=False)
 
-# Proceed only if draft and stats data are loaded
-if draft_df is not None and stats_df is not None:
-    # --- Data Processing Steps ---
-    final_df, value_df = process_data(draft_df, stats_df, team_map, st=st)
+            col1, col2 = st.columns(2)
+            # Define columns for concise display tables
+            display_cols_value = ['Pick', 'Player', 'Pos', 'Team', 'TeamPoints', 'PointsRank', 'ValueScore']
 
-    # --- Display Results ---
-    if value_df is not None:
-        plot_draft_value(value_df, st) # Use modular plotting function
+            with col1:
+                st.markdown(f"**Top {N_PICKS_DISPLAY} Best Value Picks**")
+                if not drafted_value_df.empty:
+                     st.dataframe(drafted_value_df.head(N_PICKS_DISPLAY)[display_cols_value], use_container_width=True, hide_index=True)
+                else:
+                     st.info("No 'drafted' players found.")
 
-        # --- Overall Value Tables (Based on Drafted Players) ---
-        st.subheader("Overall Draft Value Analysis")
-        st.markdown("_Based on players' performance relative to their draft position (`ValueScore = DraftRank - PointsRank`). Higher is better._")
+            with col2:
+                st.markdown(f"**Top {N_PICKS_DISPLAY} Worst Value Picks**")
+                if not drafted_value_df.empty:
+                     st.dataframe(drafted_value_df.tail(N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], use_container_width=True, hide_index=True)
+                else:
+                     st.info("No 'drafted' players found matching the criteria (including hold duration).")
 
-        # Filter for drafted records for value tables
-        drafted_value_df = value_df[value_df['acquisition_type'] == 'drafted'].sort_values(by='ValueScore', ascending=False)
+            # --- Team-Specific Draft Value Analysis (Based on Drafted Players) ---
+            st.subheader("Team-Specific Draft Value Analysis")
+            # Get drafting teams from the drafted subset
+            drafting_teams = sorted(drafted_value_df['Team'].dropna().unique()) # Use Team
+            if drafting_teams:
+                 selected_draft_team = st.selectbox('Select Drafting Team:', drafting_teams) # Shows full names
+                 if selected_draft_team:
+                     team_value_df = drafted_value_df[drafted_value_df['Team'] == selected_draft_team].copy() # Filter by Team
+                     st.markdown(f"**Draft Value Analysis for {selected_draft_team}**")
 
-        col1, col2 = st.columns(2)
-        # Define columns for concise display tables
-        display_cols_value = ['Pick', 'Player', 'Pos', 'Team', 'TeamPoints', 'PointsRank', 'ValueScore']
+                     # Show only half as many picks for team-specific analysis
+                     TEAM_N_PICKS_DISPLAY = max(1, N_PICKS_DISPLAY // 2)
 
-        with col1:
-            st.markdown(f"**Top {N_PICKS_DISPLAY} Best Value Picks**")
-            if not drafted_value_df.empty:
-                 st.dataframe(drafted_value_df.head(N_PICKS_DISPLAY)[display_cols_value], use_container_width=True, hide_index=True)
+                     col3, col4 = st.columns(2)
+                     with col3:
+                         st.markdown(f"*Top {TEAM_N_PICKS_DISPLAY} Best Value Picks*")
+                         st.dataframe(team_value_df.head(TEAM_N_PICKS_DISPLAY)[display_cols_value], use_container_width=True, hide_index=True)
+                     with col4:
+                         st.markdown(f"*Top {TEAM_N_PICKS_DISPLAY} Worst Value Picks*")
+                         st.dataframe(team_value_df.tail(TEAM_N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], use_container_width=True, hide_index=True)
             else:
-                 st.info("No 'drafted' players found.")
+                st.info("No drafting teams found in the data for drafted players.")
 
-        with col2:
-            st.markdown(f"**Top {N_PICKS_DISPLAY} Worst Value Picks**")
-            if not drafted_value_df.empty:
-                 st.dataframe(drafted_value_df.tail(N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], use_container_width=True, hide_index=True)
+            # --- NEW: Best Waiver/Trade Acquisitions Section ---
+            st.header("Waiver Wire & Trade Analysis")
+
+            # Filter for waiver records
+            waiver_records_df = value_df[value_df['acquisition_type'] == 'waiver'].copy()
+
+            # 1. Top Overall Acquisitions (Unique Players by TotalPoints)
+            st.subheader(f"Top {N_PICKS_DISPLAY} Overall Acquisitions (by Season Total Points)")
+            st.markdown("_Players acquired via waiver/trade, ranked by their total points scored across the entire season._")
+            if not waiver_records_df.empty:
+                # Get unique players acquired via waiver, include their original Team
+                unique_waiver_players = waiver_records_df[['Player', 'TeamPoints', 'PickupTeamName']].drop_duplicates(subset=['Player'])
+                # Sort them by TeamPoints
+                top_overall_acquisitions = unique_waiver_players.sort_values(by='TeamPoints', ascending=False)
+                # Display
+                display_cols_overall_acq = ['Player', 'TeamPoints', 'PickupTeamName']
+                st.dataframe(top_overall_acquisitions.head(N_PICKS_DISPLAY)[display_cols_overall_acq], hide_index=True, use_container_width=True)
             else:
-                 st.info("No 'drafted' players found matching the criteria (including hold duration).")
+                st.info("No waiver/trade acquisitions found.")
 
-        # --- Team-Specific Draft Value Analysis (Based on Drafted Players) ---
-        st.subheader("Team-Specific Draft Value Analysis")
-        # Get drafting teams from the drafted subset
-        drafting_teams = sorted(drafted_value_df['Team'].dropna().unique()) # Use Team
-        if drafting_teams:
-             selected_draft_team = st.selectbox('Select Drafting Team:', drafting_teams) # Shows full names
-             if selected_draft_team:
-                 team_value_df = drafted_value_df[drafted_value_df['Team'] == selected_draft_team].copy() # Filter by Team
-                 st.markdown(f"**Draft Value Analysis for {selected_draft_team}**")
-
-                 # Show only half as many picks for team-specific analysis
-                 TEAM_N_PICKS_DISPLAY = max(1, N_PICKS_DISPLAY // 2)
-
-                 col3, col4 = st.columns(2)
-                 with col3:
-                     st.markdown(f"*Top {TEAM_N_PICKS_DISPLAY} Best Value Picks*")
-                     st.dataframe(team_value_df.head(TEAM_N_PICKS_DISPLAY)[display_cols_value], use_container_width=True, hide_index=True)
-                 with col4:
-                     st.markdown(f"*Top {TEAM_N_PICKS_DISPLAY} Worst Value Picks*")
-                     st.dataframe(team_value_df.tail(TEAM_N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], use_container_width=True, hide_index=True)
-        else:
-            st.info("No drafting teams found in the data for drafted players.")
-
-        # --- NEW: Best Waiver/Trade Acquisitions Section ---
-        st.header("Waiver Wire & Trade Analysis")
-
-        # Filter for waiver records
-        waiver_records_df = value_df[value_df['acquisition_type'] == 'waiver'].copy()
-
-        # 1. Top Overall Acquisitions (Unique Players by TotalPoints)
-        st.subheader(f"Top {N_PICKS_DISPLAY} Overall Acquisitions (by Season Total Points)")
-        st.markdown("_Players acquired via waiver/trade, ranked by their total points scored across the entire season._")
-        if not waiver_records_df.empty:
-            # Get unique players acquired via waiver, include their original Team
-            unique_waiver_players = waiver_records_df[['Player', 'TeamPoints', 'PickupTeamName']].drop_duplicates(subset=['Player'])
-            # Sort them by TeamPoints
-            top_overall_acquisitions = unique_waiver_players.sort_values(by='TeamPoints', ascending=False)
-            # Display
-            display_cols_overall_acq = ['Player', 'TeamPoints', 'PickupTeamName']
-            st.dataframe(top_overall_acquisitions.head(N_PICKS_DISPLAY)[display_cols_overall_acq], hide_index=True, use_container_width=True)
-        else:
-            st.info("No waiver/trade acquisitions found.")
-
-        # 2. Top Team Acquisitions (by TeamPoints scored for that team)
-        st.subheader("Top Acquisitions by Acquiring Team")
-        st.markdown("_Players acquired via waiver/trade by each team, ranked by points scored *for that specific team* after acquisition._")
-        if not waiver_records_df.empty:
-            # Get acquiring teams
-            acquiring_teams = sorted(waiver_records_df['team_abbrev'].dropna().unique())
-            if acquiring_teams:
-                selected_acq_team = st.selectbox('Select Acquiring Team:', acquiring_teams)
-                if selected_acq_team:
-                    team_acquisitions_df = waiver_records_df[waiver_records_df['team_abbrev'] == selected_acq_team].copy()
-                    # Sort by points scored for *this* team
-                    team_acquisitions_df = team_acquisitions_df.sort_values(by='TeamPoints', ascending=False)
-                    st.markdown(f"**Top {N_PICKS_DISPLAY} Acquisitions for {selected_acq_team} (by Points for Team)**")
-                    display_cols_team_acq = ['Player', 'TeamPoints', 'FirstWeek', 'LastWeek'] # Show points for team and duration
-                    st.dataframe(team_acquisitions_df.head(N_PICKS_DISPLAY)[display_cols_team_acq], hide_index=True, use_container_width=True)
+            # 2. Top Team Acquisitions (by TeamPoints scored for that team)
+            st.subheader("Top Acquisitions by Acquiring Team")
+            st.markdown("_Players acquired via waiver/trade by each team, ranked by points scored *for that specific team* after acquisition._")
+            if not waiver_records_df.empty:
+                # Get acquiring teams
+                acquiring_teams = sorted(waiver_records_df['team_abbrev'].dropna().unique())
+                if acquiring_teams:
+                    selected_acq_team = st.selectbox('Select Acquiring Team:', acquiring_teams)
+                    if selected_acq_team:
+                        team_acquisitions_df = waiver_records_df[waiver_records_df['team_abbrev'] == selected_acq_team].copy()
+                        # Sort by points scored for *this* team
+                        team_acquisitions_df = team_acquisitions_df.sort_values(by='TeamPoints', ascending=False)
+                        st.markdown(f"**Top {N_PICKS_DISPLAY} Acquisitions for {selected_acq_team} (by Points for Team)**")
+                        display_cols_team_acq = ['Player', 'TeamPoints', 'FirstWeek', 'LastWeek'] # Show points for team and duration
+                        st.dataframe(team_acquisitions_df.head(N_PICKS_DISPLAY)[display_cols_team_acq], hide_index=True, use_container_width=True)
+                else:
+                    st.info("No teams found who made waiver/trade acquisitions.")
             else:
-                st.info("No teams found who made waiver/trade acquisitions.")
-        else:
-            st.info("No waiver/trade acquisitions found.")
+                st.info("No waiver/trade acquisitions found.")
 
-        # --- Updated Full Data Table ---
-        st.subheader("Full Processed Data")
-        st.markdown("_Includes all player-team records with acquisition type._")
-        with st.expander("Show Full Data Table"):
-            # Define columns for the full table display
-            all_cols_ordered = [
-                'Player', 'team_abbrev', 'acquisition_type', 'TeamPoints', 'TotalPoints', # Core Info
-                'FirstWeek', 'LastWeek', # Stint Info
-                'Pick', 'Team', 'DraftingTeamAbbrev', # Draft Info (if applicable)
-                'PointsRank', 'ValueScore' # Ranks & Value (if applicable)
-            ]
-            # Add any remaining columns automatically
-            remaining_cols = [col for col in value_df.columns if col not in all_cols_ordered]
-            # Display using the final value_df
-            st.dataframe(value_df[all_cols_ordered + remaining_cols], use_container_width=True, hide_index=True)
+            # --- Updated Full Data Table ---
+            st.subheader("Full Processed Data")
+            st.markdown("_Includes all player-team records with acquisition type._")
+            with st.expander("Show Full Data Table"):
+                # Define columns for the full table display
+                all_cols_ordered = [
+                    'Player', 'team_abbrev', 'acquisition_type', 'TeamPoints', 'TotalPoints', # Core Info
+                    'FirstWeek', 'LastWeek', # Stint Info
+                    'Pick', 'Team', 'DraftingTeamAbbrev', # Draft Info (if applicable)
+                    'PointsRank', 'ValueScore' # Ranks & Value (if applicable)
+                ]
+                # Add any remaining columns automatically
+                remaining_cols = [col for col in value_df.columns if col not in all_cols_ordered]
+                # Display using the final value_df
+                st.dataframe(value_df[all_cols_ordered + remaining_cols], use_container_width=True, hide_index=True)
 
+    elif draft_df is None:
+         st.warning("Draft data could not be loaded. Cannot display dashboard.")
+    else: # stats_df is None
+         st.warning("Stats data could not be loaded. Cannot perform analysis.") # Added specific message for missing stats
 
-elif draft_df is None:
-     st.warning("Draft data could not be loaded. Cannot display dashboard.")
-else: # stats_df is None
-     st.warning("Stats data could not be loaded. Cannot perform analysis.") # Added specific message for missing stats
+with team_tab:
+    st.header("Team Analysis")
+    st.info("Team analysis features coming soon! This tab will contain team-specific insights and performance metrics.")
+    
+    # Placeholder content for the Team tab
+    st.markdown("""
+    ### Planned Features:
+    - Team performance comparison
+    - Roster composition analysis
+    - Head-to-head matchup insights
+    - Season progression tracking
+    - Lineup optimization suggestions
+    """)
