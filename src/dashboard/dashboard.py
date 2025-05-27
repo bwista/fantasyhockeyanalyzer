@@ -178,7 +178,7 @@ def determine_acquisition_type(group):
 
 # --- Streamlit App ---
 st.set_page_config(layout="wide")
-st.title('🏒 Fantasy Hockey Draft & Acquisition Analysis')
+st.title('🏒 Fantasy Hockey Season Analysis')
 
 # --- Create Tabs ---
 draft_tab, team_tab = st.tabs(["📊 Draft", "🏒 Team"])
@@ -309,11 +309,15 @@ with draft_tab:
             st.markdown("_Players acquired via waiver/trade, ranked by their total points scored across the entire season._")
             if not waiver_records_df.empty:
                 # Get unique players acquired via waiver, include their original Team
-                unique_waiver_players = waiver_records_df[['Player', 'TeamPoints', 'PickupTeamName']].drop_duplicates(subset=['Player'])
+                unique_waiver_players = waiver_records_df[['Player','Pos', 'TeamPoints', 'PickupTeamName','FirstWeek','LastWeek']].drop_duplicates(subset=['Player'])
+
+                unique_waiver_players['Duration'] = unique_waiver_players['LastWeek'] - unique_waiver_players['FirstWeek'] #calculate duration
+                unique_waiver_players['AvgPointsPerWeek'] = unique_waiver_players['TeamPoints'] / unique_waiver_players['Duration'] #calculate average points per week
+
                 # Sort them by TeamPoints
                 top_overall_acquisitions = unique_waiver_players.sort_values(by='TeamPoints', ascending=False)
                 # Display
-                display_cols_overall_acq = ['Player', 'TeamPoints', 'PickupTeamName']
+                display_cols_overall_acq = ['Player','Pos', 'PickupTeamName', 'TeamPoints', 'AvgPointsPerWeek', 'Duration']
                 st.dataframe(top_overall_acquisitions.head(N_PICKS_DISPLAY)[display_cols_overall_acq], hide_index=True, use_container_width=True)
             else:
                 st.info("No waiver/trade acquisitions found.")
@@ -328,10 +332,13 @@ with draft_tab:
                     selected_acq_team = st.selectbox('Select Acquiring Team:', acquiring_teams)
                     if selected_acq_team:
                         team_acquisitions_df = waiver_records_df[waiver_records_df['team_abbrev'] == selected_acq_team].copy()
+
+                        team_acquisitions_df['Duration'] = team_acquisitions_df['LastWeek'] - team_acquisitions_df['FirstWeek'] #calculate duration
+                        team_acquisitions_df['AvgPointsPerWeek'] = team_acquisitions_df['TeamPoints'] / team_acquisitions_df['Duration'] #calculate average points per week
                         # Sort by points scored for *this* team
                         team_acquisitions_df = team_acquisitions_df.sort_values(by='TeamPoints', ascending=False)
                         st.markdown(f"**Top {N_PICKS_DISPLAY} Acquisitions for {selected_acq_team} (by Points for Team)**")
-                        display_cols_team_acq = ['Player', 'TeamPoints', 'FirstWeek', 'LastWeek'] # Show points for team and duration
+                        display_cols_team_acq = ['Player','Pos', 'TeamPoints', 'AvgPointsPerWeek', 'Duration'] # Show points for team and duration
                         st.dataframe(team_acquisitions_df.head(N_PICKS_DISPLAY)[display_cols_team_acq], hide_index=True, use_container_width=True)
                 else:
                     st.info("No teams found who made waiver/trade acquisitions.")
