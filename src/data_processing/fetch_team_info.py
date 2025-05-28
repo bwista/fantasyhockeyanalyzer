@@ -91,25 +91,46 @@ def fetch_and_save_team_info(league_id, year, swid, espn_s2, output_dir, output_
         print(f"Error: An unexpected error occurred writing to {output_file}")
         return False # Indicate failure
 
-if __name__ == "__main__":
-    # Construct the absolute path to the config file
+def load_config():
+    """Load configuration from either Streamlit secrets or JSON file."""
+    # Try to load from Streamlit secrets first (if running in Streamlit)
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets'):
+            config = {
+                'LEAGUE_ID': st.secrets["LEAGUE_ID"],
+                'YEAR': st.secrets["YEAR"],
+                'SWID': st.secrets["SWID"],
+                'ESPN_S2': st.secrets["ESPN_S2"]
+            }
+            logging.info("Loaded configuration from Streamlit secrets")
+            return config
+    except (ImportError, KeyError, AttributeError):
+        # Fall back to JSON file if Streamlit is not available or secrets are missing
+        pass
+    
+    # Load configuration from JSON file (fallback)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.abspath(os.path.join(script_dir, CONFIG_FILE))
-
-    # Load configuration from JSON file
+    
     try:
         with open(config_path, 'r') as f:
             config = json.load(f)
         logging.info(f"Loaded configuration from {config_path}")
+        return config
     except FileNotFoundError:
         logging.error(f"Configuration file not found at {config_path}")
-        config = None
+        return None
     except json.JSONDecodeError:
         logging.error(f"Error decoding JSON from the configuration file: {config_path}")
-        config = None
+        return None
     except Exception as e:
         logging.error(f"An error occurred loading the configuration file: {e}")
-        config = None
+        return None
+
+if __name__ == "__main__":
+    # Load configuration
+    config = load_config()
 
     if config:
         # Extract config values

@@ -34,7 +34,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # --- Configuration ---
 # Define paths relative to project root (which is added to sys.path)
-CONFIG_FILE_PATH = 'user_config.json'
+# CONFIG_FILE_PATH = 'user_config.json'  # No longer needed - using st.secrets
 DRAFT_RESULTS_FILE = 'src/data/draft_results.json' # Updated path for JSON
 PLAYER_STATS_FILE = 'src/data/box_score_stats.json' # Updated path and extension
 TEAM_MAPPING_FILE = 'src/data/team_mapping.json' # Added path for team Player to abbreviation mapping
@@ -184,34 +184,35 @@ st.title('🏒 Fantasy Hockey Season Analysis')
 draft_tab, team_tab = st.tabs(["📊 Draft", "🏒 Team"])
 
 with draft_tab:
-    # --- Load User Configuration ---
+    # --- Load User Configuration from Streamlit Secrets ---
     config_placeholder = st.empty()  # Create a placeholder for the config section
     with config_placeholder.container():
         st.subheader("Configuration")
-        config = None
         try:
-            with open(CONFIG_FILE_PATH, 'r') as f:
-                config = json.load(f)
-            st.success(f"Loaded configuration from {CONFIG_FILE_PATH}")
-            # Optionally show config details here if needed
-        except FileNotFoundError:
-            st.error(f"ERROR: Configuration file not found at {CONFIG_FILE_PATH}. Please create it.")
-            st.stop()
-        except json.JSONDecodeError:
-            st.error(f"ERROR: Could not decode JSON from {CONFIG_FILE_PATH}. Please check its format.")
+            # Extract essential config values from st.secrets
+            league_id = st.secrets["LEAGUE_ID"]
+            year = st.secrets["YEAR"]
+            swid = st.secrets["SWID"]
+            espn_s2 = st.secrets["ESPN_S2"]
+            
+            # Create config dict for compatibility with existing code
+            config = {
+                'LEAGUE_ID': league_id,
+                'YEAR': year,
+                'SWID': swid,
+                'ESPN_S2': espn_s2
+            }
+            
+            st.success("Loaded configuration from Streamlit secrets")
+        except KeyError as e:
+            st.error(f"ERROR: Missing required secret: {e}. Please check your secrets configuration.")
             st.stop()
         except Exception as e:
-            st.error(f"ERROR: An unexpected error occurred loading {CONFIG_FILE_PATH}: {e}")
+            st.error(f"ERROR: An unexpected error occurred loading secrets: {e}")
             st.stop()
 
     # If we reach here, config is loaded and valid, so clear the section:
     config_placeholder.empty()
-
-    # Extract essential config values
-    league_id = config.get('LEAGUE_ID')
-    year = config.get('YEAR')
-    swid = config.get('SWID')
-    espn_s2 = config.get('ESPN_S2')
 
     if not all([league_id, year, swid, espn_s2]):
         st.error("ERROR: Configuration file is missing one or more required keys: LEAGUE_ID, YEAR, SWID, ESPN_S2.")

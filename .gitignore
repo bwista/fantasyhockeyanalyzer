@@ -65,3 +65,6 @@ venv.bak/
 # Data Files
 *.csv
 *.json
+
+# Streamlit secrets
+.streamlit/secrets.toml
