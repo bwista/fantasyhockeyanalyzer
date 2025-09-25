@@ -210,11 +210,40 @@ def plot_draft_value(value_df, st):
         y_axis_limit = max_rank * 1.05
         fig = px.scatter(
             drafted_plot_df,
-            x='Pick', y='PointsRank', color='Team',
-            hover_data=['Player', 'Pick', 'PointsRank', 'Team', 'TotalPoints', 'ValueScore'],
+            x='Pick', y='PointsRank', color='Team', symbol='Pos',
+            hover_data=['Player', 'Pick', 'PointsRank', 'Team', 'TotalPoints', 'ValueScore', 'Pos'],
             # title="Draft Position vs. Season Points Rank",
             trendline=None, color_discrete_sequence=px.colors.qualitative.Bold
         )
+
+        # --- Legend Simplification ---
+        teams_in_legend = set()
+        fig.for_each_trace(
+            lambda trace: teams_in_legend.add(trace.name.split(",")[0]) if "," in trace.name else teams_in_legend.add(trace.name)
+        )
+        
+        team_traces = {team: None for team in teams_in_legend if team in drafted_plot_df['Team'].unique()}
+
+        for trace in fig.data:
+            if "," in trace.name:
+                team_name = trace.name.split(",")[0]
+                if team_name in team_traces and team_traces[team_name] is None:
+                    team_traces[team_name] = trace
+                    trace.name = team_name
+                    trace.showlegend = True
+                else:
+                    trace.showlegend = False
+        
+        # Add separate legend items for position symbols
+        position_symbols = {'F': 'circle', 'D': 'square', 'G': 'diamond-open'}
+        for pos, symbol in position_symbols.items():
+            fig.add_trace(go.Scatter(
+                x=[None], y=[None], mode='markers',
+                marker=dict(symbol=symbol, color='grey', size=10),
+                name=f"Pos: {pos}",
+                showlegend=True
+            ))
+
         if trendline_x is not None and trendline_y_pred is not None:
             fig.add_trace(go.Scatter(
                 x=trendline_x, y=trendline_y_pred, mode='lines', name='Trend (Drafted Players)',
@@ -223,7 +252,7 @@ def plot_draft_value(value_df, st):
         fig.update_layout(
             xaxis_title="Draft Pick", yaxis_title="Points Rank",
             xaxis_range=[0, x_axis_limit], yaxis_range=[0, y_axis_limit],
-            yaxis_autorange=False, xaxis_autorange=False, legend_title_text='Team Name'
+            yaxis_autorange=False, xaxis_autorange=False, legend_title_text='Team / Position'
         )
         st.plotly_chart(fig, use_container_width=True)
     else:
