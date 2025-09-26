@@ -191,8 +191,38 @@ def plot_draft_value(value_df, st):
     st.subheader("Draft Value: Pick vs. Rank(Fantasy Points)")
     st.markdown("_This plot compares drafted players' initial position to their final season rank._")
     drafted_plot_df = value_df[value_df['acquisition_type'] == 'drafted'].copy()
+
+    available_teams = sorted(drafted_plot_df['Team'].dropna().unique())
+    position_options = ['All', 'F', 'D', 'G']
+    plot_col, filter_col = st.columns([5, 1], gap="medium")
+
+    team_options = ['All Teams'] + available_teams if available_teams else ['All Teams']
+
+    with filter_col:
+        selected_team = st.selectbox(
+            "Team Filter",
+            team_options,
+            index=0
+        )
+        selected_position = st.selectbox(
+            "Position Filter",
+            position_options,
+            index=0
+        )
+
+    if selected_team != 'All Teams':
+        drafted_plot_df = drafted_plot_df[drafted_plot_df['Team'] == selected_team]
+
+    if selected_position != 'All':
+        drafted_plot_df = drafted_plot_df[drafted_plot_df['Pos'] == selected_position]
+
+    if drafted_plot_df.empty:
+        with plot_col:
+            st.info("No drafted players found to plot for the selected filter.")
+        return
+
     trendline_x = trendline_y_pred = None
-    if not drafted_plot_df.empty and 'Pick' in drafted_plot_df.columns and 'PointsRank' in drafted_plot_df.columns:
+    if 'Pick' in drafted_plot_df.columns and 'PointsRank' in drafted_plot_df.columns:
         ols_data = drafted_plot_df[['Pick', 'PointsRank']].dropna()
         if not ols_data.empty and len(ols_data) > 1:
             X = ols_data['Pick']
@@ -203,59 +233,97 @@ def plot_draft_value(value_df, st):
             trendline_x = np.linspace(X.min(), X.max(), 100)
             trendline_x_with_const = sm.add_constant(trendline_x)
             trendline_y_pred = trendline_results.predict(trendline_x_with_const)
-    if not drafted_plot_df.empty:
-        max_pick = drafted_plot_df['Pick'].max() if not drafted_plot_df.empty else 160
-        max_rank = value_df['PointsRank'].max() if not value_df.empty else 160
-        x_axis_limit = max_pick * 1.05
-        y_axis_limit = max_rank * 1.05
-        fig = px.scatter(
-            drafted_plot_df,
-            x='Pick', y='PointsRank', color='Team', symbol='Pos',
-            hover_data=['Player', 'Pick', 'PointsRank', 'Team', 'TotalPoints', 'ValueScore', 'Pos'],
-            # title="Draft Position vs. Season Points Rank",
-            trendline=None, color_discrete_sequence=px.colors.qualitative.Bold
-        )
 
-        # --- Legend Simplification ---
-        teams_in_legend = set()
-        fig.for_each_trace(
-            lambda trace: teams_in_legend.add(trace.name.split(",")[0]) if "," in trace.name else teams_in_legend.add(trace.name)
-        )
-        
-        team_traces = {team: None for team in teams_in_legend if team in drafted_plot_df['Team'].unique()}
+    max_pick = drafted_plot_df['Pick'].dropna().max()
+    max_rank = drafted_plot_df['PointsRank'].dropna().max()
+    x_axis_limit = (max_pick if pd.notna(max_pick) else 160) * 1.05
+    y_axis_limit = (max_rank if pd.notna(max_rank) else 160) * 1.05
 
-        for trace in fig.data:
-            if "," in trace.name:
-                team_name = trace.name.split(",")[0]
-                if team_name in team_traces and team_traces[team_name] is None:
-                    team_traces[team_name] = trace
-                    trace.name = team_name
-                    trace.showlegend = True
+    position_symbols = {'F': 'circle', 'D': 'square', 'G': 'diamond-open'}
+
+    fig = px.scatter(
+        drafted_plot_df,
+        x='Pick',
+        y='PointsRank',
+        color='Team',
+        hover_data=['Player', 'Pick', 'PointsRank', 'Team', 'TotalPoints', 'ValueScore', 'Pos'],
+        color_discrete_sequence=px.colors.qualitative.Bold,
+        custom_data=['Pos']
+    )
+
+    team_colors = {}
+
+    for trace in fig.data:
+        if getattr(trace, "customdata", None) is not None and trace.mode == 'markers':
+            customdata_list = []
+            for entry in trace.customdata:
+                if isinstance(entry, (list, tuple, np.ndarray)):
+                    customdata_list.append(list(entry))
                 else:
-                    trace.showlegend = False
-        
-        # Add separate legend items for position symbols
-        position_symbols = {'F': 'circle', 'D': 'square', 'G': 'diamond-open'}
-        for pos, symbol in position_symbols.items():
-            fig.add_trace(go.Scatter(
-                x=[None], y=[None], mode='markers',
-                marker=dict(symbol=symbol, color='grey', size=10),
-                name=f"Pos: {pos}",
-                showlegend=True
-            ))
+                    customdata_list.append([entry])
+            symbols = [
+                position_symbols.get(point_data[0], 'circle')
+                for point_data in customdata_list
+            ]
+            if selected_position == 'All':
+                x_values = list(trace.x)
+                y_values = list(trace.y)
+                x_values.insert(0, None)
+                y_values.insert(0, None)
+                customdata_list.insert(0, [''])
+                symbols.insert(0, 'circle')
+                trace.update(x=x_values, y=y_values, customdata=customdata_list, marker=dict(symbol=symbols))
+            else:
+                trace.update(customdata=customdata_list, marker=dict(symbol=symbols))
 
-        if trendline_x is not None and trendline_y_pred is not None:
-            fig.add_trace(go.Scatter(
-                x=trendline_x, y=trendline_y_pred, mode='lines', name='Trend (Drafted Players)',
-                line=dict(color='rgba(255,255,255,0.6)', dash='dash')
-            ))
-        fig.update_layout(
-            xaxis_title="Draft Pick", yaxis_title="Points Rank",
-            xaxis_range=[0, x_axis_limit], yaxis_range=[0, y_axis_limit],
-            yaxis_autorange=False, xaxis_autorange=False, legend_title_text='Team / Position'
-        )
+            color_values = trace.marker.color
+            if isinstance(color_values, (list, tuple, np.ndarray)) and len(color_values) > 0:
+                team_color = color_values[0]
+            else:
+                team_color = color_values
+            team_colors[trace.name] = team_color
+            trace.showlegend = False
+
+    for team, color in team_colors.items():
+        fig.add_trace(go.Scatter(
+            x=[None],
+            y=[None],
+            mode='markers',
+            marker=dict(color=color, symbol='circle', size=10),
+            name=team,
+            showlegend=True
+        ))
+
+    if trendline_x is not None and trendline_y_pred is not None:
+        fig.add_trace(go.Scatter(
+            x=trendline_x,
+            y=trendline_y_pred,
+            mode='lines',
+            name='Trend (Drafted Players)',
+            line=dict(color='rgba(255,255,255,0.6)', dash='dash')
+        ))
+
+    for pos, symbol in position_symbols.items():
+        fig.add_trace(go.Scatter(
+            x=[None],
+            y=[None],
+            mode='markers',
+            marker=dict(symbol=symbol, color='rgba(150,150,150,0.8)', size=10),
+            name=f"Pos: {pos}",
+            showlegend=True
+        ))
+
+    fig.update_layout(
+        xaxis_title="Draft Pick",
+        yaxis_title="Points Rank",
+        xaxis_range=[0, x_axis_limit],
+        yaxis_range=[0, y_axis_limit],
+        yaxis_autorange=False,
+        xaxis_autorange=False,
+        legend_title_text='Team / Position'
+    )
+
+    with plot_col:
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No 'drafted' players found to plot.")
 
 # Additional display/plotting functions can be added here as needed.
