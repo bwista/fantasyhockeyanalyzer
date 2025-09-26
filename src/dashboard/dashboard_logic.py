@@ -188,13 +188,13 @@ def calculate_value(df, points_col):
 
 # --- Plotting/Display Functions ---
 def plot_draft_value(value_df, st):
-    st.subheader("Draft Value: Pick vs. Rank(Fantasy Points)")
-    st.markdown("_This plot compares drafted players' initial position to their final season rank._")
+    st.subheader("Draft Value: Draft Pick vs. Rank(Fantasy Points Scored)")
+    st.markdown("_This plot compares drafted players' initial position to their final season rank for fantasy points scored._")
     drafted_plot_df = value_df[value_df['acquisition_type'] == 'drafted'].copy()
 
     available_teams = sorted(drafted_plot_df['Team'].dropna().unique())
     position_options = ['All', 'F', 'D', 'G']
-    plot_col, filter_col = st.columns([5, 1], gap="medium")
+    plot_col, filter_col = st.columns([6, 1], gap="medium")
 
     team_options = ['All Teams'] + available_teams if available_teams else ['All Teams']
 
