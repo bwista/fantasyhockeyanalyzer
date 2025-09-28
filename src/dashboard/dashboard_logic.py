@@ -3,6 +3,8 @@ Core logic for the Fantasy Hockey Dashboard: data loading, processing, and plott
 """
 import os
 import json
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
@@ -10,11 +12,26 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # --- Data Loading/Generation ---
-def ensure_data_files_exist(config, draft_results_file, player_stats_file, team_mapping_file,
-                           parse_draft_results, fetch_box_score_stats, fetch_and_save_team_info,
-                           start_week, end_week, rate_limit_delay, team_info_output_dir, team_info_output_file, st=None):
+def ensure_data_files_exist(
+        config,
+        draft_results_file,
+        player_stats_file,
+        team_mapping_file,
+        team_schedule_file,
+        parse_draft_results,
+        fetch_box_score_stats,
+        fetch_and_save_team_info,
+        fetch_and_save_team_schedule,
+        start_week,
+        end_week,
+        rate_limit_delay,
+        team_info_output_dir,
+        team_info_output_file,
+        st=None,
+):
     """
-    Ensures all required data files exist, generating them if necessary. Returns loaded dataframes and mapping.
+    Ensures all required data files exist, generating them if necessary.
+    Returns loaded dataframes, mapping, and schedule payload.
     """
     league_id = config.get('LEAGUE_ID')
     year = config.get('YEAR')
@@ -61,9 +78,28 @@ def ensure_data_files_exist(config, draft_results_file, player_stats_file, team_
         else:
             if st: st.error("Failed to generate team mapping.")
 
+    # Team Schedule
+    if not os.path.exists(team_schedule_file):
+        if st: st.warning(f"Team schedule file ({team_schedule_file}) not found. Attempting to generate...")
+        schedule_output_dir = os.path.dirname(team_schedule_file) or "."
+        success = fetch_and_save_team_schedule(
+            league_id=league_id,
+            year=year,
+            swid=swid,
+            espn_s2=espn_s2,
+            output_dir=schedule_output_dir,
+            output_file=team_schedule_file
+        )
+        if success and os.path.exists(team_schedule_file):
+            if st: st.success(f"Generated and saved team schedule to {team_schedule_file}.")
+        else:
+            if st: st.error("Failed to generate team schedule.")
+
+    schedule_payload = load_team_schedule(team_schedule_file, st=st)
+
     # Load data
     draft_df, stats_df, team_map = load_data(draft_results_file, player_stats_file, team_mapping_file, st=st)
-    return draft_df, stats_df, team_map
+    return draft_df, stats_df, team_map, schedule_payload
 
 
 def load_data(draft_file, stats_file, mapping_file, st=None):
@@ -90,6 +126,197 @@ def load_data(draft_file, stats_file, mapping_file, st=None):
     except Exception as e:
         if st: st.warning(f"Warning: Could not load team mapping from {mapping_file}: {e}")
     return draft_df, stats_df, team_map
+
+def load_team_schedule(schedule_file: str, st=None) -> Optional[Dict[str, Any]]:
+    """
+    Loads the team schedule JSON payload from disk if it exists.
+    """
+    if not os.path.exists(schedule_file):
+        if st: st.warning(f"Team schedule file not found at {schedule_file}")
+        return None
+    try:
+        with open(schedule_file, 'r') as f:
+            payload = json.load(f)
+        if st: st.success(f"Loaded team schedule from {schedule_file}")
+        return payload
+    except Exception as e:
+        if st: st.error(f"Error loading {schedule_file}: {e}")
+        return None
+
+def _safe_parse_timestamp(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, (int, float)):
+        try:
+            timestamp = value / 1000 if value > 1e11 else value
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.isdigit():
+            try:
+                num = int(text)
+                timestamp = num / 1000 if len(text) > 10 else num
+                return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
+
+def _format_datetime_label(dt_value: Optional[Any]) -> Optional[str]:
+    if dt_value is None or (pd.isna(dt_value) if hasattr(pd, "isna") else False):
+        return None
+    if isinstance(dt_value, pd.Timestamp):
+        if pd.isna(dt_value):
+            return None
+        dt_obj = dt_value.to_pydatetime()
+    elif isinstance(dt_value, datetime):
+        dt_obj = dt_value
+    else:
+        dt_obj = _safe_parse_timestamp(dt_value)
+        if dt_obj is None:
+            return None
+    if isinstance(dt_obj, pd.Timestamp):
+        if pd.isna(dt_obj):
+            return None
+        dt_obj = dt_obj.to_pydatetime()
+    if dt_obj.tzinfo is None:
+        dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+    return dt_obj.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+def team_schedule_to_dataframe(schedule_payload: Optional[Dict[str, Any]]) -> pd.DataFrame:
+    if not schedule_payload:
+        return pd.DataFrame()
+    teams = schedule_payload.get('teams') or []
+    if not teams:
+        return pd.DataFrame()
+
+    rows: List[Dict[str, Any]] = []
+    generated_at = _safe_parse_timestamp(schedule_payload.get('generatedAt'))
+
+    for team in teams:
+        team_id = team.get('teamId')
+        team_name = team.get('teamName')
+        team_abbrev = team.get('teamAbbrev')
+        division_id = team.get('divisionId')
+        schedule_entries = team.get('schedule') or []
+
+        for entry in schedule_entries:
+            result = (entry.get('result') or "TBD").upper()
+            is_completed = result in {'W', 'L', 'T'}
+
+            status = entry.get('status') or {}
+            start_dt = _safe_parse_timestamp(
+                status.get('periodStartTime')
+                or status.get('startTime')
+                or status.get('currentScoringPeriodStart')
+            )
+            if start_dt and start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
+
+            opponent_name = entry.get('opponentTeamName')
+            opponent_abbrev = entry.get('opponentTeamAbbrev')
+            is_bye = bool(entry.get('isBye'))
+            if opponent_name and opponent_abbrev:
+                opponent_label = f"{opponent_name} ({opponent_abbrev})"
+            elif opponent_name:
+                opponent_label = opponent_name
+            elif is_bye:
+                opponent_label = "BYE"
+            else:
+                opponent_label = "TBD"
+
+            team_score_raw = entry.get('teamScore')
+            opp_score_raw = entry.get('opponentScore')
+            try:
+                team_score = float(team_score_raw) if team_score_raw is not None else None
+            except (TypeError, ValueError):
+                team_score = None
+            try:
+                opponent_score = float(opp_score_raw) if opp_score_raw is not None else None
+            except (TypeError, ValueError):
+                opponent_score = None
+
+            if team_score is not None and opponent_score is not None:
+                scoreline = f"{team_score:.1f} - {opponent_score:.1f}"
+            else:
+                scoreline = ""
+
+            status_text = (
+                status.get('type', {}).get('description')
+                or status.get('detail')
+                or status.get('currentStatus')
+                or status.get('periodStatus')
+                or ""
+            )
+
+            home_away = entry.get('homeAway') or 'unknown'
+            rows.append({
+                'leagueId': schedule_payload.get('leagueId'),
+                'seasonId': schedule_payload.get('seasonId'),
+                'generatedAt': generated_at,
+                'teamId': team_id,
+                'teamName': team_name,
+                'teamAbbrev': team_abbrev,
+                'divisionId': division_id,
+                'matchupPeriod': entry.get('matchupPeriod'),
+                'matchupId': entry.get('matchupId'),
+                'homeAway': home_away,
+                'isPlayoff': bool(entry.get('isPlayoff')),
+                'playoffTierType': entry.get('playoffTierType'),
+                'opponentTeamId': entry.get('opponentTeamId'),
+                'opponentTeamName': opponent_name,
+                'opponentTeamAbbrev': opponent_abbrev,
+                'opponentLabel': opponent_label,
+                'teamScore': team_score,
+                'opponentScore': opponent_score,
+                'result': result,
+                'winner': entry.get('winner'),
+                'isBye': is_bye,
+                'pointsByScoringPeriod': entry.get('pointsByScoringPeriod') or {},
+                'opponentPointsByScoringPeriod': entry.get('opponentPointsByScoringPeriod') or {},
+                'status': status,
+                'statusText': status_text,
+                'startDatetime': start_dt,
+                'startDateLabel': _format_datetime_label(start_dt),
+                'scoreline': scoreline,
+                'homeAwayLabel': 'Home' if home_away == 'home' else ('Away' if home_away == 'away' else 'Unknown'),
+                'isCompleted': is_completed,
+            })
+
+    schedule_df = pd.DataFrame(rows)
+    if schedule_df.empty:
+        return schedule_df
+
+    schedule_df['generatedAt'] = pd.to_datetime(schedule_df['generatedAt'], utc=True, errors='coerce')
+    schedule_df['startDatetime'] = pd.to_datetime(schedule_df['startDatetime'], utc=True, errors='coerce')
+    schedule_df['teamScore'] = pd.to_numeric(schedule_df['teamScore'], errors='coerce')
+    schedule_df['opponentScore'] = pd.to_numeric(schedule_df['opponentScore'], errors='coerce')
+    schedule_df['matchupPeriod'] = pd.to_numeric(schedule_df['matchupPeriod'], errors='coerce').astype('Int64')
+    schedule_df['isPlayoff'] = schedule_df['isPlayoff'].fillna(False).astype(bool)
+    schedule_df['isBye'] = schedule_df['isBye'].fillna(False).astype(bool)
+    schedule_df['isCompleted'] = schedule_df['isCompleted'].fillna(False).astype(bool)
+    schedule_df['homeAway'] = schedule_df['homeAway'].fillna('unknown')
+    schedule_df['homeAwayLabel'] = schedule_df['homeAway'].map({'home': 'Home', 'away': 'Away'}).fillna('Unknown')
+    schedule_df['opponentLabel'] = schedule_df['opponentLabel'].fillna('TBD')
+    schedule_df['scoreline'] = schedule_df['scoreline'].fillna('')
+    schedule_df['isPlayoffLabel'] = np.where(schedule_df['isPlayoff'], 'Playoffs', 'Regular Season')
+    schedule_df['startDateLabel'] = schedule_df.apply(lambda row: row['startDateLabel'] or _format_datetime_label(row['startDatetime']), axis=1)
+
+    schedule_df.sort_values(['teamId', 'matchupPeriod', 'startDatetime'], inplace=True)
+    schedule_df.reset_index(drop=True, inplace=True)
+    return schedule_df
 
 # --- Data Processing ---
 def process_data(draft_df, stats_df, team_map, st=None):
