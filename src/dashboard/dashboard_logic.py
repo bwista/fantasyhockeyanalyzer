@@ -553,4 +553,61 @@ def plot_draft_value(value_df, st):
     with plot_col:
         st.plotly_chart(fig, use_container_width=True)
 
+
+def plot_matchup_scores_by_period(schedule_df: pd.DataFrame, selected_team_name: str, st=None):
+    """
+    Plots a bar chart of team vs. opponent scores for each matchup period in the provided schedule.
+    """
+    st.subheader("Matchup Scoring Breakdown")
+    st.markdown("_Total scores for each matchup period (week) in the selection._")
+
+    if schedule_df is None or schedule_df.empty:
+        st.info("No matchups selected to display scoring breakdown.")
+        return
+
+    # We can directly use the teamScore and opponentScore from the schedule_df, as they are the totals for the matchup.
+    plot_df = schedule_df[schedule_df['isBye'] == False].copy()
+    # Use opponentTeamAbbrev for more concise labels
+    plot_df = plot_df[['matchupPeriod', 'opponentTeamAbbrev', 'teamScore', 'opponentScore']].dropna()
+
+    if plot_df.empty:
+        st.info("No completed matchups with scores available in the selected range.")
+        return
+
+    plot_df.sort_values('matchupPeriod', inplace=True)
+    # Create a more concise matchup label
+    plot_df['matchupLabel'] = "W" + plot_df['matchupPeriod'].astype(str) + " vs " + plot_df['opponentTeamAbbrev']
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=plot_df['matchupLabel'],
+        y=plot_df['teamScore'],
+        name=selected_team_name,
+        text=plot_df['teamScore'].round(1),
+        textposition='outside',
+    ))
+
+    fig.add_trace(go.Bar(
+        x=plot_df['matchupLabel'],
+        y=plot_df['opponentScore'],
+        name='Opponent',
+        text=plot_df['opponentScore'].round(1),
+        textposition='outside',
+    ))
+
+    fig.update_layout(
+        barmode='group',
+        title_text="Total Scores by Matchup",
+        xaxis_title="Matchup Period",
+        yaxis_title="Total Points",
+        legend_title_text="Team",
+        xaxis={'type': 'category'},
+        uniformtext_minsize=8,
+        uniformtext_mode='hide'
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
 # Additional display/plotting functions can be added here as needed.

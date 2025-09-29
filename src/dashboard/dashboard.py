@@ -27,7 +27,8 @@ from src.data_processing.fetch_team_info import fetch_and_save_team_info, OUTPUT
 from src.data_processing.fetch_team_schedule import fetch_and_save_team_schedule, OUTPUT_FILE as TEAM_SCHEDULE_FILE
 # Add import for new logic module
 from src.dashboard.dashboard_logic import (
-    ensure_data_files_exist, process_data, plot_draft_value, team_schedule_to_dataframe
+    ensure_data_files_exist, process_data, plot_draft_value, team_schedule_to_dataframe,
+    plot_matchup_scores_by_period
 )
 
 # Configure logging for dashboard (optional, but good practice)
@@ -379,91 +380,91 @@ with draft_tab:
 with team_tab:
     st.header("Team Analysis")
     if schedule_df is None or schedule_df.empty:
-        st.info("Team schedule data is not available. Run the data preparation step to fetch the latest schedule.")
+        st.info("Team schedule data is not available. Run data preparation to fetch the latest schedule.")
     else:
-        st.subheader("Team Schedule Overview")
-        if schedule_generated_at is not None and not pd.isna(schedule_generated_at):
-            generated_ts = schedule_generated_at
-            if isinstance(generated_ts, pd.Timestamp):
-                if generated_ts.tzinfo is None:
-                    generated_ts = generated_ts.tz_localize("UTC")
-                else:
-                    generated_ts = generated_ts.tz_convert("UTC")
-            st.caption(f"Schedule generated at {generated_ts.strftime('%Y-%m-%d %H:%M UTC')}")
-        team_names = sorted(schedule_df['teamName'].dropna().unique())
-        if not team_names:
-            st.info("No teams found in schedule data.")
-        else:
+        content_col, filter_col = st.columns([3, 1])
+
+        with filter_col:
+            st.subheader("Filters")
+            team_names = sorted(schedule_df['teamName'].dropna().unique())
+            if not team_names:
+                st.info("No teams found in schedule data.")
+                st.stop()
+
             selected_team_name = st.selectbox("Select Team", team_names, index=0)
             include_playoffs = st.checkbox(
                 "Include playoff matchups",
                 value=True,
-                help="Turn off to focus on regular season matchups for the selected team."
+                help="Turn off to focus on regular season matchups."
             )
+
             selected_team_df = schedule_df[schedule_df['teamName'] == selected_team_name].copy()
             if not include_playoffs:
                 selected_team_df = selected_team_df[~selected_team_df['isPlayoff']]
-            if selected_team_df.empty:
+
+            available_periods = sorted([int(mp) for mp in selected_team_df['matchupPeriod'].dropna().unique().tolist()])
+            if available_periods:
+                min_period, max_period = min(available_periods), max(available_periods)
+                selected_range = st.slider(
+                    "Filter by Matchup Period:",
+                    min_value=min_period,
+                    max_value=max_period,
+                    value=(min_period, max_period),
+                    key=f"matchup_period_slider_{selected_team_name}"
+                )
+                start_period, end_period = selected_range
+                filtered_df = selected_team_df[
+                    (selected_team_df['matchupPeriod'] >= start_period) &
+                    (selected_team_df['matchupPeriod'] <= end_period)
+                ].copy()
+            else:
+                filtered_df = selected_team_df.copy()
+
+        with content_col:
+            st.subheader(f"Team Report: {selected_team_name}")
+            if schedule_generated_at is not None and not pd.isna(schedule_generated_at):
+                generated_ts = schedule_generated_at
+                if isinstance(generated_ts, pd.Timestamp):
+                    generated_ts = generated_ts.tz_localize("UTC") if generated_ts.tzinfo is None else generated_ts.tz_convert("UTC")
+                st.caption(f"Schedule generated at {generated_ts.strftime('%Y-%m-%d %H:%M UTC')}")
+
+            if filtered_df.empty:
                 st.info("No schedule entries available for the selected filters.")
             else:
-                completed_games = selected_team_df[selected_team_df['isCompleted']]
+                completed_games = filtered_df[filtered_df['isCompleted']]
                 wins = int((completed_games['result'] == 'W').sum())
                 losses = int((completed_games['result'] == 'L').sum())
                 ties = int((completed_games['result'] == 'T').sum())
-                record_label = f"{wins}-{losses}"
-                if ties:
-                    record_label = f"{record_label}-{ties}"
+                record_label = f"{wins}-{losses}" + (f"-{ties}" if ties else "")
                 completed_count = len(completed_games)
-                points_for = float(completed_games['teamScore'].sum(skipna=True)) if completed_count else 0.0
-                points_against = float(completed_games['opponentScore'].sum(skipna=True)) if completed_count else 0.0
+                points_for = float(completed_games['teamScore'].sum(skipna=True))
+                points_against = float(completed_games['opponentScore'].sum(skipna=True))
                 avg_points = points_for / completed_count if completed_count else 0.0
                 point_diff = points_for - points_against
+
                 metric_cols = st.columns(4)
-                metric_cols[0].metric("Record", record_label if completed_count else "0-0", help="Wins-Losses(-Ties) for completed matchups")
+                metric_cols[0].metric("Record", record_label if completed_count else "0-0", help="W-L-T for completed matchups")
                 metric_cols[1].metric("Avg Points For", f"{avg_points:.1f}" if completed_count else "—")
                 metric_cols[2].metric("Total Points For", f"{points_for:.1f}")
                 metric_cols[3].metric("Point Differential", f"{point_diff:+.1f}" if completed_count else "0.0")
 
-                available_periods = sorted([int(mp) for mp in selected_team_df['matchupPeriod'].dropna().unique().tolist()])
-                if available_periods:
-                    selected_periods = st.multiselect(
-                        "Matchup period filter",
-                        available_periods,
-                        default=available_periods,
-                        key=f"matchup_period_filter_{selected_team_name}"
-                    )
-                    if selected_periods:
-                        filtered_df = selected_team_df[selected_team_df['matchupPeriod'].isin(selected_periods)].copy()
-                    else:
-                        filtered_df = selected_team_df.copy()
-                else:
-                    filtered_df = selected_team_df.copy()
-
                 filtered_df.sort_values(['startDatetime', 'matchupPeriod'], inplace=True, ignore_index=True)
+
+                plot_matchup_scores_by_period(filtered_df, selected_team_name, st)
 
                 def format_schedule_table(source: pd.DataFrame) -> pd.DataFrame:
                     if source is None or source.empty:
                         return pd.DataFrame()
-                    table = pd.DataFrame({
+                    return pd.DataFrame({
                         "Period": source['matchupPeriod'].astype('Int64'),
                         "Date": source['startDateLabel'].fillna("TBD"),
                         "Opponent": source['opponentLabel'].fillna("TBD"),
                         "Venue": source['homeAwayLabel'],
                         "Type": source['isPlayoffLabel'],
-                        "Result": source['result'].where(source['isCompleted'], other='TBD'),
+                        "Result": source['result'].where(source['isCompleted'], 'TBD'),
                         "Score": source['scoreline'].replace('', pd.NA),
                         "Status": source['statusText'].fillna("")
                     })
-                    return table
-
-                upcoming_df = filtered_df[~filtered_df['isCompleted']].copy()
-                upcoming_df.sort_values('startDatetime', inplace=True, ignore_index=True)
-                st.subheader("Upcoming Matchups")
-                upcoming_table = format_schedule_table(upcoming_df)
-                if upcoming_table.empty:
-                    st.info("No upcoming matchups scheduled.")
-                else:
-                    st.dataframe(upcoming_table, use_container_width=True, hide_index=True)
 
                 recent_df = filtered_df[filtered_df['isCompleted']].copy()
                 recent_df.sort_values('startDatetime', ascending=False, inplace=True, ignore_index=True)
