@@ -181,7 +181,7 @@ def determine_acquisition_type(group):
 
 # --- Streamlit App ---
 st.set_page_config(layout="wide")
-st.title('🏒 Fantasy Hockey Season Analysis')
+st.header('🏒 Fantasy Hockey Season Analysis')
 
 # --- Create Tabs ---
 draft_tab, team_tab = st.tabs(["📊 Draft", "🏒 Team"])

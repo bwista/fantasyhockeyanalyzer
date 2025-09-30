@@ -447,11 +447,12 @@ def plot_draft_value(value_df, st):
         with plot_col:
             st.info("No drafted players found to plot for the selected filter.")
         return
-
+    correlation = None
     trendline_x = trendline_y_pred = None
     if 'Pick' in drafted_plot_df.columns and 'PointsRank' in drafted_plot_df.columns:
         ols_data = drafted_plot_df[['Pick', 'PointsRank']].dropna()
         if not ols_data.empty and len(ols_data) > 1:
+            correlation = ols_data['Pick'].corr(ols_data['PointsRank'])
             X = ols_data['Pick']
             y = ols_data['PointsRank']
             X_with_const = sm.add_constant(X)
@@ -539,6 +540,24 @@ def plot_draft_value(value_df, st):
             name=f"Pos: {pos}",
             showlegend=True
         ))
+
+    if correlation is not None:
+        position_label = f" ({selected_position})" if selected_position != 'All' else ""
+        fig.add_annotation(
+            x=0.98,
+            y=0.02,
+            xref="paper",
+            yref="paper",
+            text=f"Pick vs Rank Correlation{position_label}: {correlation:.2f}",
+            showarrow=False,
+            font=dict(
+                size=12,
+                color="rgba(255,255,255,0.6)"
+            ),
+            align="right",
+            xanchor="right",
+            yanchor="bottom"
+        )
 
     fig.update_layout(
         xaxis_title="Draft Pick",
