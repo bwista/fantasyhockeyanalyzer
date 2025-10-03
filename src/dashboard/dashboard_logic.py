@@ -545,7 +545,7 @@ def plot_draft_value(value_df, st):
         position_label = f" ({selected_position})" if selected_position != 'All' else ""
         fig.add_annotation(
             x=0.98,
-            y=0.02,
+            y=0.98,
             xref="paper",
             yref="paper",
             text=f"Pick vs Rank Correlation{position_label}: {correlation:.2f}",
@@ -556,14 +556,14 @@ def plot_draft_value(value_df, st):
             ),
             align="right",
             xanchor="right",
-            yanchor="bottom"
+            yanchor="top"
         )
 
     fig.update_layout(
         xaxis_title="Draft Pick",
         yaxis_title="Points Rank",
         xaxis_range=[0, x_axis_limit],
-        yaxis_range=[0, y_axis_limit],
+        yaxis_range=[y_axis_limit, 0],
         yaxis_autorange=False,
         xaxis_autorange=False,
         legend_title_text='Team / Position'
@@ -630,3 +630,5 @@ def plot_matchup_scores_by_period(schedule_df: pd.DataFrame, selected_team_name:
 
 
 # Additional display/plotting functions can be added here as needed.
+
+

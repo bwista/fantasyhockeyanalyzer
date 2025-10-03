@@ -76,29 +76,6 @@ For local development, you need to configure your ESPN league details:
     *   Find the cookies for `espn.com` or `fantasy.espn.com`.
     *   Locate the `SWID` and `espn_s2` cookies and copy their values.
 
-### Streamlit Deployment
-
-For deploying to Streamlit Community Cloud, the application uses Streamlit's secrets management instead of the JSON configuration file.
-
-1.  **Create `.streamlit/secrets.toml` for local testing (optional):**
-    ```toml
-    # ESPN Fantasy Hockey API Configuration
-    LEAGUE_ID = 12345678
-    YEAR = 2025
-    SWID = "{YOUR_SWID_COOKIE_VALUE}"
-    ESPN_S2 = "YOUR_ESPN_S2_COOKIE_VALUE"
-    ```
-
-2.  **For Streamlit Community Cloud deployment:**
-    *   The `.streamlit/secrets.toml` file is automatically ignored by git (see `.gitignore`)
-    *   When deploying, paste the contents of your `secrets.toml` file into the "Advanced settings" → "Secrets" field in the Streamlit deployment interface
-    *   The application will automatically detect when running in Streamlit and use `st.secrets` instead of the JSON file
-
-**Important Security Notes:**
-*   Never commit `user_config.json` or `.streamlit/secrets.toml` to your repository
-*   Both files are included in `.gitignore` to prevent accidental commits
-*   For production deployment, always use Streamlit's secrets management feature
-
 ## How to Run the Application
 
 ### Local Development
@@ -112,19 +89,6 @@ For deploying to Streamlit Community Cloud, the application uses Streamlit's sec
 4.  The application will open in your web browser.
     *   On the first run, or if data files (`src/data/*.json`) are missing, the dashboard will attempt to fetch the necessary data from the ESPN API using the credentials in `user_config.json`. This might take a few moments.
     *   Subsequent runs will load data from the local files if they exist.
-
-### Streamlit Community Cloud Deployment
-
-1.  **Push your code to GitHub** (ensure secrets files are not committed)
-2.  **Go to [share.streamlit.io](https://share.streamlit.io)**
-3.  **Connect your GitHub repository**
-4.  **Set the main file path to:** `src/dashboard/dashboard.py`
-5.  **In Advanced settings, add your secrets:**
-    *   Copy the contents of your `.streamlit/secrets.toml` file
-    *   Paste into the "Secrets" field in the deployment interface
-6.  **Deploy the app**
-
-The deployed app will automatically use Streamlit's secrets management and work the same as your local version.
 
 ## Testing
 
@@ -166,7 +130,6 @@ When adding new functionality, please include corresponding unit tests. See `tes
 ```
 fantasyhockeyanalyzer/
 ├── .gitignore
-├── PLAN.MD
 ├── README.md
 ├── requirements.txt
 ├── pytest.ini           # Test configuration
