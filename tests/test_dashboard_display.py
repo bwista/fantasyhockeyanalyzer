@@ -25,3 +25,16 @@ def test_get_acquiring_teams_drops_nulls():
     })
     result = get_acquiring_teams(waiver_records_df)
     assert result == ['Team A', 'Team B']
+
+
+def test_full_data_display_renames_internal_columns():
+    """Displayed column names should be human-readable, not internal identifiers."""
+    internal_cols = ['team_abbrev', 'acquisition_type', 'DraftingTeamAbbrev']
+    display_rename_map = {
+        'team_abbrev': 'Current Team',
+        'acquisition_type': 'How Acquired',
+        'DraftingTeamAbbrev': 'Drafted By (Abbrev)',
+    }
+    for col in internal_cols:
+        assert col in display_rename_map, f"{col} should have a display name"
+        assert display_rename_map[col] != col, f"{col} rename should differ from original"

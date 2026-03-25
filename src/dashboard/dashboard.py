@@ -229,8 +229,16 @@ with draft_tab:
                 ]
                 # Add any remaining columns automatically
                 remaining_cols = [col for col in value_df.columns if col not in all_cols_ordered]
-                # Display using the final value_df
-                st.dataframe(value_df[all_cols_ordered + remaining_cols], use_container_width=True, hide_index=True)
+                display_df = value_df[all_cols_ordered + remaining_cols].rename(columns={
+                    'team_abbrev': 'Current Team',
+                    'acquisition_type': 'How Acquired',
+                    'DraftingTeamAbbrev': 'Drafted By (Abbrev)',
+                    'TeamPoints': 'Points (This Team)',
+                    'TotalPoints': 'Season Total Points',
+                    'FirstWeek': 'First Week',
+                    'LastWeek': 'Last Week',
+                })
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
 
     elif draft_df is None:
          st.warning("Draft data could not be loaded. Cannot display dashboard.")
