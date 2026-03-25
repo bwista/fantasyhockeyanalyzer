@@ -17,13 +17,6 @@ PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..', '..'))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-# Import data fetching functions and their constants if needed
-from src.data_processing.parse_draft_results import parse_draft_results
-# Import the function AND the constants needed for the call
-from src.data_processing.fetch_box_score_stats import fetch_box_score_stats, START_WEEK, END_WEEK, RATE_LIMIT_DELAY
-# Import the function AND the constants needed for the call
-from src.data_processing.fetch_team_info import fetch_and_save_team_info, OUTPUT_DIR as TEAM_INFO_OUTPUT_DIR, OUTPUT_FILE as TEAM_INFO_OUTPUT_FILE
-from src.data_processing.fetch_team_schedule import fetch_and_save_team_schedule, OUTPUT_FILE as TEAM_SCHEDULE_FILE
 # Add import for new logic module
 from src.dashboard.dashboard_logic import (
     ensure_data_files_exist, process_data, plot_draft_value, team_schedule_to_dataframe,
@@ -40,6 +33,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 DRAFT_RESULTS_FILE = 'src/data/draft_results.json' # Updated path for JSON
 PLAYER_STATS_FILE = 'src/data/box_score_stats.json' # Updated path and extension
 TEAM_MAPPING_FILE = 'src/data/team_mapping.json' # Added path for team Player to abbreviation mapping
+TEAM_SCHEDULE_FILE = 'src/data/team_schedule.json'
 POINTS_COLUMN = 'TotalPoints' # Actual points column Player after aggregation
 N_PICKS_DISPLAY = 10 # Number of best/worst picks to show
 
@@ -93,16 +87,7 @@ with draft_tab:
             PLAYER_STATS_FILE,
             TEAM_MAPPING_FILE,
             TEAM_SCHEDULE_FILE,
-            parse_draft_results,
-            fetch_box_score_stats,
-            fetch_and_save_team_info,
-            fetch_and_save_team_schedule,
-            START_WEEK,
-            END_WEEK,
-            RATE_LIMIT_DELAY,
-            TEAM_INFO_OUTPUT_DIR,
-            TEAM_INFO_OUTPUT_FILE,
-            st=st
+            st=st,
         )
 
     freshness = get_data_freshness([DRAFT_RESULTS_FILE, PLAYER_STATS_FILE])

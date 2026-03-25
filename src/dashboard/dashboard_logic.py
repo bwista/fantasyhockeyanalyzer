@@ -30,26 +30,28 @@ def get_data_freshness(file_paths: list) -> Optional[str]:
 
 # --- Data Loading/Generation ---
 def ensure_data_files_exist(
-        config,
-        draft_results_file,
-        player_stats_file,
-        team_mapping_file,
-        team_schedule_file,
-        parse_draft_results,
-        fetch_box_score_stats,
-        fetch_and_save_team_info,
-        fetch_and_save_team_schedule,
-        start_week,
-        end_week,
-        rate_limit_delay,
-        team_info_output_dir,
-        team_info_output_file,
-        st=None,
+    config: dict,
+    draft_results_file: str,
+    player_stats_file: str,
+    team_mapping_file: str,
+    team_schedule_file: str,
+    st=None,
 ):
     """
-    Ensures all required data files exist, generating them if necessary.
-    Returns loaded dataframes, mapping, and schedule payload.
+    Ensures all required data files exist, generating them from the ESPN API if necessary.
+    Returns (draft_df, stats_df, team_map, schedule_payload).
     """
+    from src.data_processing.parse_draft_results import parse_draft_results
+    from src.data_processing.fetch_box_score_stats import (
+        fetch_box_score_stats, START_WEEK, END_WEEK, RATE_LIMIT_DELAY
+    )
+    from src.data_processing.fetch_team_info import (
+        fetch_and_save_team_info,
+        OUTPUT_DIR as TEAM_INFO_OUTPUT_DIR,
+        OUTPUT_FILE as TEAM_INFO_OUTPUT_FILE,
+    )
+    from src.data_processing.fetch_team_schedule import fetch_and_save_team_schedule
+
     league_id = config.get('LEAGUE_ID')
     year = config.get('YEAR')
     swid = config.get('SWID')
@@ -74,7 +76,7 @@ def ensure_data_files_exist(
         if st: st.warning(f"Player stats file ({player_stats_file}) not found. Attempting to generate...")
         box_stats = fetch_box_score_stats(
             league_id=league_id, year=year, swid=swid, espn_s2=espn_s2,
-            start_week=start_week, end_week=end_week, delay=rate_limit_delay
+            start_week=START_WEEK, end_week=END_WEEK, delay=RATE_LIMIT_DELAY
         )
         if box_stats:
             with open(player_stats_file, 'w') as f:
@@ -88,7 +90,7 @@ def ensure_data_files_exist(
         if st: st.warning(f"Team mapping file ({team_mapping_file}) not found. Attempting to generate...")
         success = fetch_and_save_team_info(
             league_id=league_id, year=year, swid=swid, espn_s2=espn_s2,
-            output_dir=team_info_output_dir, output_file=team_info_output_file
+            output_dir=TEAM_INFO_OUTPUT_DIR, output_file=TEAM_INFO_OUTPUT_FILE
         )
         if success and os.path.exists(team_mapping_file):
             if st: st.success(f"Generated and saved team mapping to {team_mapping_file}.")
