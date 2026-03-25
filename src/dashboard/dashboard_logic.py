@@ -414,6 +414,21 @@ def calculate_value(df, points_col):
     return df
 
 # --- Plotting/Display Functions ---
+def compute_duration_and_avg(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adds Duration (inclusive week count) and AvgPointsPerWeek columns.
+    Duration = LastWeek - FirstWeek + 1  (inclusive on both ends).
+    Returns AvgPointsPerWeek = 0.0 for any row where Duration <= 0 (bad data guard).
+    """
+    df = df.copy()
+    df['Duration'] = df['LastWeek'] - df['FirstWeek'] + 1
+    df['AvgPointsPerWeek'] = df.apply(
+        lambda r: r['TeamPoints'] / r['Duration'] if r['Duration'] > 0 else 0.0,
+        axis=1
+    )
+    return df
+
+
 def plot_draft_value(value_df, st):
     st.subheader("Draft Value: Draft Pick vs. Rank(Fantasy Points Scored)")
     st.markdown("_This plot compares drafted players' initial position to their final season rank for fantasy points scored._")

@@ -28,7 +28,7 @@ from src.data_processing.fetch_team_schedule import fetch_and_save_team_schedule
 # Add import for new logic module
 from src.dashboard.dashboard_logic import (
     ensure_data_files_exist, process_data, plot_draft_value, team_schedule_to_dataframe,
-    plot_matchup_scores_by_period
+    plot_matchup_scores_by_period, compute_duration_and_avg
 )
 
 # Configure logging for dashboard (optional, but good practice)
@@ -322,8 +322,7 @@ with draft_tab:
                 # Get unique players acquired via waiver, include their original Team
                 unique_waiver_players = waiver_records_df[['Player','Pos', 'TeamPoints', 'PickupTeamName','FirstWeek','LastWeek']].drop_duplicates(subset=['Player'])
 
-                unique_waiver_players['Duration'] = unique_waiver_players['LastWeek'] - unique_waiver_players['FirstWeek'] #calculate duration
-                unique_waiver_players['AvgPointsPerWeek'] = unique_waiver_players['TeamPoints'] / unique_waiver_players['Duration'] #calculate average points per week
+                unique_waiver_players = compute_duration_and_avg(unique_waiver_players)
 
                 # Sort them by TeamPoints
                 top_overall_acquisitions = unique_waiver_players.sort_values(by='TeamPoints', ascending=False)
@@ -344,8 +343,7 @@ with draft_tab:
                     if selected_acq_team:
                         team_acquisitions_df = waiver_records_df[waiver_records_df['team_abbrev'] == selected_acq_team].copy()
 
-                        team_acquisitions_df['Duration'] = team_acquisitions_df['LastWeek'] - team_acquisitions_df['FirstWeek'] #calculate duration
-                        team_acquisitions_df['AvgPointsPerWeek'] = team_acquisitions_df['TeamPoints'] / team_acquisitions_df['Duration'] #calculate average points per week
+                        team_acquisitions_df = compute_duration_and_avg(team_acquisitions_df)
                         # Sort by points scored for *this* team
                         team_acquisitions_df = team_acquisitions_df.sort_values(by='TeamPoints', ascending=False)
                         st.markdown(f"**Top {N_PICKS_DISPLAY} Acquisitions for {selected_acq_team} (by Points for Team)**")
