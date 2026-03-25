@@ -647,4 +647,8 @@ def plot_matchup_scores_by_period(schedule_df: pd.DataFrame, selected_team_name:
 
 # Additional display/plotting functions can be added here as needed.
 
+def get_acquiring_teams(waiver_df: pd.DataFrame) -> list:
+    """Returns sorted list of unique full team names from PickupTeamName column."""
+    return sorted(waiver_df['PickupTeamName'].dropna().unique().tolist())
+
 

@@ -28,7 +28,7 @@ from src.data_processing.fetch_team_schedule import fetch_and_save_team_schedule
 # Add import for new logic module
 from src.dashboard.dashboard_logic import (
     ensure_data_files_exist, process_data, plot_draft_value, team_schedule_to_dataframe,
-    plot_matchup_scores_by_period, compute_duration_and_avg
+    plot_matchup_scores_by_period, compute_duration_and_avg, get_acquiring_teams
 )
 
 # Configure logging for dashboard (optional, but good practice)
@@ -219,11 +219,11 @@ with draft_tab:
             st.markdown("_Players acquired via waiver/trade by each team, ranked by points scored *for that specific team* after acquisition._")
             if not waiver_records_df.empty:
                 # Get acquiring teams
-                acquiring_teams = sorted(waiver_records_df['team_abbrev'].dropna().unique())
+                acquiring_teams = get_acquiring_teams(waiver_records_df)
                 if acquiring_teams:
                     selected_acq_team = st.selectbox('Select Acquiring Team:', acquiring_teams)
                     if selected_acq_team:
-                        team_acquisitions_df = waiver_records_df[waiver_records_df['team_abbrev'] == selected_acq_team].copy()
+                        team_acquisitions_df = waiver_records_df[waiver_records_df['PickupTeamName'] == selected_acq_team].copy()
 
                         team_acquisitions_df = compute_duration_and_avg(team_acquisitions_df)
                         # Sort by points scored for *this* team
