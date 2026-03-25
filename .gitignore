@@ -68,3 +68,6 @@ venv.bak/
 
 # Streamlit secrets
 .streamlit/secrets.toml
+
+# Worktrees
+.worktrees/
