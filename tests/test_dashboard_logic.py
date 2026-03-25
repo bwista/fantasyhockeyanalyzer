@@ -1,6 +1,8 @@
+import os
+import tempfile
 import pandas as pd
 import pytest
-from src.dashboard.dashboard_logic import compute_duration_and_avg, process_data
+from src.dashboard.dashboard_logic import compute_duration_and_avg, process_data, get_data_freshness
 
 
 def test_duration_includes_both_endpoints():
@@ -39,6 +41,21 @@ def test_avg_points_zero_duration_guard():
     })
     result = compute_duration_and_avg(df)
     assert result.loc[0, 'AvgPointsPerWeek'] == 0.0
+
+
+def test_get_data_freshness_returns_none_for_missing_file():
+    assert get_data_freshness(['/nonexistent/path.json']) is None
+
+
+def test_get_data_freshness_returns_string_for_existing_file():
+    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+        path = f.name
+    try:
+        result = get_data_freshness([path])
+        assert result is not None
+        assert 'UTC' in result
+    finally:
+        os.unlink(path)
 
 
 def test_process_data_raises_on_bad_stats_schema():

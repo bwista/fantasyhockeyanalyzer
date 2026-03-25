@@ -11,6 +11,23 @@ import statsmodels.api as sm
 import plotly.express as px
 import plotly.graph_objects as go
 
+def get_data_freshness(file_paths: list) -> Optional[str]:
+    """
+    Returns a human-readable string of the oldest modification time among the given files,
+    or None if any file is missing.
+    """
+    mtimes = []
+    for path in file_paths:
+        if not os.path.exists(path):
+            return None
+        mtimes.append(os.path.getmtime(path))
+    if not mtimes:
+        return None
+    oldest = min(mtimes)
+    dt = datetime.fromtimestamp(oldest, tz=timezone.utc)
+    return dt.strftime('%Y-%m-%d %H:%M UTC')
+
+
 # --- Data Loading/Generation ---
 def ensure_data_files_exist(
         config,

@@ -27,7 +27,7 @@ from src.data_processing.fetch_team_schedule import fetch_and_save_team_schedule
 # Add import for new logic module
 from src.dashboard.dashboard_logic import (
     ensure_data_files_exist, process_data, plot_draft_value, team_schedule_to_dataframe,
-    plot_matchup_scores_by_period, compute_duration_and_avg, get_acquiring_teams
+    plot_matchup_scores_by_period, compute_duration_and_avg, get_acquiring_teams, get_data_freshness
 )
 
 # Configure logging for dashboard (optional, but good practice)
@@ -104,6 +104,20 @@ with draft_tab:
             TEAM_INFO_OUTPUT_FILE,
             st=st
         )
+
+    freshness = get_data_freshness([DRAFT_RESULTS_FILE, PLAYER_STATS_FILE])
+    col_fresh, col_refresh = st.columns([4, 1])
+    with col_fresh:
+        if freshness:
+            st.caption(f"Data last fetched: {freshness}")
+        else:
+            st.caption("Data freshness unknown.")
+    with col_refresh:
+        if st.button("Refresh Data", help="Delete cached files and re-fetch from ESPN API"):
+            for f in [DRAFT_RESULTS_FILE, PLAYER_STATS_FILE, TEAM_MAPPING_FILE, TEAM_SCHEDULE_FILE]:
+                if os.path.exists(f):
+                    os.remove(f)
+            st.rerun()
 
     schedule_df = team_schedule_to_dataframe(schedule_payload)
     schedule_generated_at = None
