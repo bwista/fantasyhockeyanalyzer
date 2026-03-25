@@ -382,9 +382,10 @@ def process_data(draft_df, stats_df, team_map, st=None):
         final_df.rename(columns={'name':'Player', 'DraftPick':'Pick', 'position':'Pos', 'DraftingTeamName':'Team'}, inplace=True)
         value_df.rename(columns={'name':'Player', 'DraftPick':'Pick', 'position':'Pos', 'DraftingTeamName':'Team'}, inplace=True)
         return final_df, value_df
-    except Exception as e:
-        if st: st.error(f"Error during data processing: {e}")
-        return None, None
+    except (KeyError, TypeError, AttributeError) as e:
+        if st:
+            st.error(f"Error during data processing: {e}")
+        raise
 
 def determine_acquisition_type(group):
     group = group.sort_values('FirstWeek')

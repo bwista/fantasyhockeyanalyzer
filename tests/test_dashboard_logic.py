@@ -1,6 +1,6 @@
 import pandas as pd
 import pytest
-from src.dashboard.dashboard_logic import compute_duration_and_avg
+from src.dashboard.dashboard_logic import compute_duration_and_avg, process_data
 
 
 def test_duration_includes_both_endpoints():
@@ -39,3 +39,16 @@ def test_avg_points_zero_duration_guard():
     })
     result = compute_duration_and_avg(df)
     assert result.loc[0, 'AvgPointsPerWeek'] == 0.0
+
+
+def test_process_data_raises_on_bad_stats_schema():
+    """process_data should raise ValueError if stats_df is missing required columns."""
+    draft_df = pd.DataFrame({
+        'Player': ['A'],
+        'DraftPick': [1],
+        'Team': ['TOR'],
+    })
+    bad_stats_df = pd.DataFrame({'wrong_col': [1]})  # missing name, team_abbrev, etc.
+
+    with pytest.raises((KeyError, ValueError)):
+        process_data(draft_df, bad_stats_df, None)  # positional None for team_map

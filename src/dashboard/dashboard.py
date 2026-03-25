@@ -133,7 +133,11 @@ with draft_tab:
     # Proceed only if draft and stats data are loaded
     if draft_df is not None and stats_df is not None:
         # --- Data Processing Steps ---
-        final_df, value_df = process_data(draft_df, stats_df, team_map, st=st)
+        try:
+            final_df, value_df = process_data(draft_df, stats_df, team_map, st=st)
+        except Exception as e:
+            st.error(f"Data processing failed: {e}")
+            st.stop()
 
         # --- Display Results ---
         if value_df is not None:
