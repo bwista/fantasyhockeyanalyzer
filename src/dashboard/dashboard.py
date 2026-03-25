@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import json # Added for team mapping
-import time # Added for temporary messages
 import plotly.express as px # Added for plotting
 import numpy as np # Added for trendline calculation
 import statsmodels.api as sm # Added for OLS trendline calculation
@@ -43,19 +42,6 @@ PLAYER_STATS_FILE = 'src/data/box_score_stats.json' # Updated path and extension
 TEAM_MAPPING_FILE = 'src/data/team_mapping.json' # Added path for team Player to abbreviation mapping
 POINTS_COLUMN = 'TotalPoints' # Actual points column Player after aggregation
 N_PICKS_DISPLAY = 10 # Number of best/worst picks to show
-
-# --- Helper Functions ---
-def show_temporary_message(message_type, content, duration):
-    """Displays a Streamlit message (info, success, etc.) for a specified duration."""
-    placeholder = st.empty()
-    message_func = getattr(placeholder, message_type, None)
-    if message_func:
-        message_func(content)
-        time.sleep(duration)
-        placeholder.empty()
-    else:
-        # Fallback or error handling if message_type is invalid
-        st.error(f"Invalid message type: {message_type}")
 
 # --- Streamlit App ---
 st.set_page_config(layout="wide")
@@ -100,11 +86,7 @@ with draft_tab:
         st.stop()
 
     # --- Data File Checks and Generation ---
-    data_loading_placeholder = st.empty()  # Create a placeholder for the data loading section
-    with data_loading_placeholder.container():
-        st.subheader("Data Loading & Preparation")
-
-        # Use new modular function for all data file checks and loading
+    with st.spinner("Loading data..."):
         draft_df, stats_df, team_map, schedule_payload = ensure_data_files_exist(
             config,
             DRAFT_RESULTS_FILE,
@@ -122,8 +104,6 @@ with draft_tab:
             TEAM_INFO_OUTPUT_FILE,
             st=st
         )
-    # If we reach here, all data files are loaded/generated, so clear the section:
-    data_loading_placeholder.empty()
 
     schedule_df = team_schedule_to_dataframe(schedule_payload)
     schedule_generated_at = None
