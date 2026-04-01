@@ -35,7 +35,6 @@ def ensure_data_files_exist(
     player_stats_file: str,
     team_mapping_file: str,
     team_schedule_file: str,
-    st=None,
 ):
     """
     Ensures all required data files exist, generating them from the ESPN API if necessary.
@@ -59,21 +58,15 @@ def ensure_data_files_exist(
     DATA_DIR = os.path.dirname(draft_results_file)
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR)
-        if st: st.info(f"Created data directory: {DATA_DIR}")
 
     # Draft Results
     if not os.path.exists(draft_results_file):
-        if st: st.warning(f"Draft results file ({draft_results_file}) not found. Attempting to generate...")
         draft_data = parse_draft_results(league_id=league_id, year=year, swid=swid, espn_s2=espn_s2)
         if draft_data is not None:
             draft_data.to_json(draft_results_file, orient='records', indent=4)
-            if st: st.success(f"Generated and saved draft results to {draft_results_file}.")
-        else:
-            if st: st.error("Failed to generate draft results.")
 
     # Player Stats
     if not os.path.exists(player_stats_file):
-        if st: st.warning(f"Player stats file ({player_stats_file}) not found. Attempting to generate...")
         box_stats = fetch_box_score_stats(
             league_id=league_id, year=year, swid=swid, espn_s2=espn_s2,
             start_week=START_WEEK, end_week=END_WEEK, delay=RATE_LIMIT_DELAY
@@ -81,27 +74,18 @@ def ensure_data_files_exist(
         if box_stats:
             with open(player_stats_file, 'w') as f:
                 json.dump(box_stats, f, indent=4)
-            if st: st.success(f"Generated and saved player stats to {player_stats_file}.")
-        elif box_stats == []:
-            if st: st.warning("Player stats generation function returned no data.")
 
     # Team Mapping
     if not os.path.exists(team_mapping_file):
-        if st: st.warning(f"Team mapping file ({team_mapping_file}) not found. Attempting to generate...")
-        success = fetch_and_save_team_info(
+        fetch_and_save_team_info(
             league_id=league_id, year=year, swid=swid, espn_s2=espn_s2,
             output_dir=TEAM_INFO_OUTPUT_DIR, output_file=TEAM_INFO_OUTPUT_FILE
         )
-        if success and os.path.exists(team_mapping_file):
-            if st: st.success(f"Generated and saved team mapping to {team_mapping_file}.")
-        else:
-            if st: st.error("Failed to generate team mapping.")
 
     # Team Schedule
     if not os.path.exists(team_schedule_file):
-        if st: st.warning(f"Team schedule file ({team_schedule_file}) not found. Attempting to generate...")
         schedule_output_dir = os.path.dirname(team_schedule_file) or "."
-        success = fetch_and_save_team_schedule(
+        fetch_and_save_team_schedule(
             league_id=league_id,
             year=year,
             swid=swid,
@@ -109,19 +93,15 @@ def ensure_data_files_exist(
             output_dir=schedule_output_dir,
             output_file=team_schedule_file
         )
-        if success and os.path.exists(team_schedule_file):
-            if st: st.success(f"Generated and saved team schedule to {team_schedule_file}.")
-        else:
-            if st: st.error("Failed to generate team schedule.")
 
-    schedule_payload = load_team_schedule(team_schedule_file, st=st)
+    schedule_payload = load_team_schedule(team_schedule_file)
 
     # Load data
-    draft_df, stats_df, team_map = load_data(draft_results_file, player_stats_file, team_mapping_file, st=st)
+    draft_df, stats_df, team_map = load_data(draft_results_file, player_stats_file, team_mapping_file)
     return draft_df, stats_df, team_map, schedule_payload
 
 
-def load_data(draft_file, stats_file, mapping_file, st=None):
+def load_data(draft_file, stats_file, mapping_file):
     """
     Loads draft results (JSON), player stats (JSON), and team mapping (JSON) from files.
     """
@@ -129,37 +109,29 @@ def load_data(draft_file, stats_file, mapping_file, st=None):
     try:
         draft_df = pd.read_json(draft_file, orient='records')
         draft_df['DraftPick'] = draft_df.index + 1
-        if st: st.success(f"Loaded draft data from {draft_file} (JSON) and added 'Pick'.")
-    except Exception as e:
-        if st: st.error(f"Error loading {draft_file}: {e}")
+    except Exception:
         return None, None, None
     try:
         stats_df = pd.read_json(stats_file)
-        if st: st.success(f"Loaded player stats from {stats_file}")
-    except Exception as e:
-        if st: st.warning(f"Warning: Could not load player stats from {stats_file}: {e}")
+    except Exception:
+        pass
     try:
         with open(mapping_file, 'r') as f:
             team_map = json.load(f)
-        if st: st.success(f"Loaded team mapping from {mapping_file}")
-    except Exception as e:
-        if st: st.warning(f"Warning: Could not load team mapping from {mapping_file}: {e}")
+    except Exception:
+        pass
     return draft_df, stats_df, team_map
 
-def load_team_schedule(schedule_file: str, st=None) -> Optional[Dict[str, Any]]:
+def load_team_schedule(schedule_file: str) -> Optional[Dict[str, Any]]:
     """
     Loads the team schedule JSON payload from disk if it exists.
     """
     if not os.path.exists(schedule_file):
-        if st: st.warning(f"Team schedule file not found at {schedule_file}")
         return None
     try:
         with open(schedule_file, 'r') as f:
-            payload = json.load(f)
-        if st: st.success(f"Loaded team schedule from {schedule_file}")
-        return payload
-    except Exception as e:
-        if st: st.error(f"Error loading {schedule_file}: {e}")
+            return json.load(f)
+    except Exception:
         return None
 
 def _safe_parse_timestamp(value: Any) -> Optional[datetime]:
@@ -605,7 +577,7 @@ def plot_draft_value(value_df, st):
     )
 
     with plot_col:
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
 
 def plot_matchup_scores_by_period(schedule_df: pd.DataFrame, selected_team_name: str, st=None):
@@ -661,7 +633,7 @@ def plot_matchup_scores_by_period(schedule_df: pd.DataFrame, selected_team_name:
         uniformtext_mode='hide'
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 # Additional display/plotting functions can be added here as needed.
