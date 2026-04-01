@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import json # Added for team mapping
-import time # Added for temporary messages
 import plotly.express as px # Added for plotting
 import numpy as np # Added for trendline calculation
 import statsmodels.api as sm # Added for OLS trendline calculation
@@ -18,17 +17,10 @@ PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..', '..'))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-# Import data fetching functions and their constants if needed
-from src.data_processing.parse_draft_results import parse_draft_results
-# Import the function AND the constants needed for the call
-from src.data_processing.fetch_box_score_stats import fetch_box_score_stats, START_WEEK, END_WEEK, RATE_LIMIT_DELAY
-# Import the function AND the constants needed for the call
-from src.data_processing.fetch_team_info import fetch_and_save_team_info, OUTPUT_DIR as TEAM_INFO_OUTPUT_DIR, OUTPUT_FILE as TEAM_INFO_OUTPUT_FILE
-from src.data_processing.fetch_team_schedule import fetch_and_save_team_schedule, OUTPUT_FILE as TEAM_SCHEDULE_FILE
 # Add import for new logic module
 from src.dashboard.dashboard_logic import (
     ensure_data_files_exist, process_data, plot_draft_value, team_schedule_to_dataframe,
-    plot_matchup_scores_by_period
+    plot_matchup_scores_by_period, compute_duration_and_avg, get_acquiring_teams, get_data_freshness
 )
 
 # Configure logging for dashboard (optional, but good practice)
@@ -41,143 +33,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 DRAFT_RESULTS_FILE = 'src/data/draft_results.json' # Updated path for JSON
 PLAYER_STATS_FILE = 'src/data/box_score_stats.json' # Updated path and extension
 TEAM_MAPPING_FILE = 'src/data/team_mapping.json' # Added path for team Player to abbreviation mapping
+TEAM_SCHEDULE_FILE = 'src/data/team_schedule.json'
 POINTS_COLUMN = 'TotalPoints' # Actual points column Player after aggregation
 N_PICKS_DISPLAY = 10 # Number of best/worst picks to show
-
-# --- Helper Functions ---
-def show_temporary_message(message_type, content, duration):
-    """Displays a Streamlit message (info, success, etc.) for a specified duration."""
-    placeholder = st.empty()
-    message_func = getattr(placeholder, message_type, None)
-    if message_func:
-        message_func(content)
-        time.sleep(duration)
-        placeholder.empty()
-    else:
-        # Fallback or error handling if message_type is invalid
-        st.error(f"Invalid message type: {message_type}")
-
-def load_data(draft_file, stats_file, mapping_file):
-    """Loads draft results (JSON), player stats (JSON), and team mapping (JSON) from files."""
-    draft_df, stats_df, team_map = None, None, None # Initialize
-
-    # --- Load Draft Data ---
-    try:
-        # Load from JSON instead of CSV
-        draft_df = pd.read_json(draft_file, orient='records')
-        # Calculate Overall Pick based on DataFrame index after loading
-        draft_df['DraftPick'] = draft_df.index + 1
-        show_temporary_message("success", f"Loaded draft data from {draft_file} (JSON) and added 'DraftPick'.", 0.25)
-    except FileNotFoundError:
-        st.error(f"Error: Draft results file not found at {draft_file}.")
-        return None, None, None
-    except ValueError as e: # Catch JSON parsing errors
-        st.error(f"Error parsing JSON draft file {draft_file}: {e}")
-        return None, None, None
-    except Exception as e:
-        st.error(f"Error loading {draft_file}: {e}")
-        return None, None, None
-
-    # --- Load Stats Data ---
-    try:
-        stats_df = pd.read_json(stats_file)
-        show_temporary_message("success", f"Loaded player stats from {stats_file}", 0.25)
-    except FileNotFoundError:
-        st.warning(f"Warning: Player stats file not found at {stats_file}. Proceeding without player stats.")
-        # Don't return yet, try loading mapping
-    except ValueError as e:
-        st.error(f"Error parsing JSON stats file {stats_file}: {e}")
-        # Don't return yet, try loading mapping
-    except Exception as e:
-        st.error(f"Error loading {stats_file}: {e}")
-        # Don't return yet, try loading mapping
-
-    # --- Load Team Mapping ---
-    try:
-        with open(mapping_file, 'r') as f:
-            team_map = json.load(f)
-        show_temporary_message("success", f"Loaded team mapping from {mapping_file}", 0.25)
-    except FileNotFoundError:
-        st.warning(f"Warning: Team mapping file not found at {mapping_file}. Cannot map draft team names to abbreviations.")
-        # Proceed without mapping if it's missing
-    except json.JSONDecodeError as e:
-        st.error(f"Error parsing JSON mapping file {mapping_file}: {e}")
-        # Proceed without mapping if it's corrupted
-    except Exception as e:
-        st.error(f"Error loading {mapping_file}: {e}")
-        # Proceed without mapping
-
-    return draft_df, stats_df, team_map
-
-def calculate_value(df, points_col):
-    """
-    Calculates PointsRank and ValueScore on the processed DataFrame.
-    ValueScore is only calculated for 'drafted' records.
-    """
-    if df is None or df.empty:
-        st.warning("Cannot calculate value: Input DataFrame is empty.")
-        return None
-
-    # Ensure required columns exist
-    required_cols = [points_col, 'DraftPick', 'acquisition_type']
-    if not all(col in df.columns for col in required_cols):
-        st.error(f"Cannot calculate value: Missing one or more required columns: {required_cols}")
-        # Add missing columns with default values if possible, or return None
-        if points_col not in df.columns: df[points_col] = 0
-        if 'DraftPick' not in df.columns: df['DraftPick'] = np.nan
-        if 'acquisition_type' not in df.columns: df['acquisition_type'] = 'unknown'
-        # Consider returning None if critical columns are missing and cannot be defaulted reasonably
-        # return None
-
-    # Ensure points column is numeric and fill NaNs
-    df[points_col] = pd.to_numeric(df[points_col], errors='coerce').fillna(0)
-    # Ensure Overall Pick is numeric (can be NaN for non-drafted)
-    df['DraftPick'] = pd.to_numeric(df['DraftPick'], errors='coerce')
-
-    # Calculate Points Rank based on overall TotalPoints (higher points = better rank)
-    df['PointsRank'] = df[points_col].rank(method='dense', ascending=False)
-
-    # Draft Rank is the overall pick number (will be NaN for non-drafted)
-    df['DraftRank'] = df['DraftPick']
-
-    # Calculate Value Score only for drafted players
-    # Initialize ValueScore column with NaN
-    df['ValueScore'] = np.nan
-
-    # Apply calculation where acquisition_type is 'drafted' and DraftRank is valid
-    drafted_mask = (df['acquisition_type'] == 'drafted') & df['DraftRank'].notna() & df['PointsRank'].notna()
-    df.loc[drafted_mask, 'ValueScore'] = df.loc[drafted_mask, 'DraftRank'] - df.loc[drafted_mask, 'PointsRank']
-
-    # No sorting is done here - sorting happens in display sections
-    return df
-
-# --- Helper Function for Acquisition Type ---
-def determine_acquisition_type(group):
-    """
-    Determines the acquisition type ('drafted' or 'waiver') for each player-team record within a player's group.
-    Assumes the group DataFrame is sorted by 'FirstWeek'.
-    """
-    group = group.sort_values('FirstWeek') # Ensure sorting within the group
-    acquisition_types = []
-    is_drafted = False # Flag to track if the player's initial 'drafted' record has been assigned
-
-    for i, row in group.iterrows():
-        current_type = 'waiver' # Default to waiver
-
-        # Check conditions for the *first* record of the player
-        if i == group.index[0]:
-            if pd.notna(row['DraftPick']) and row['team_abbrev'] == row['DraftingTeamAbbrev']: # Logic remains based on Abbrev
-                current_type = 'drafted'
-                is_drafted = True
-            # Else: remains 'waiver' (undrafted or drafted but first record doesn't match drafting team)
-
-        # For subsequent records, they are always 'waiver'
-        # (This logic is implicitly handled by defaulting to 'waiver' and only changing the first record if conditions met)
-
-        acquisition_types.append(current_type)
-
-    group['acquisition_type'] = acquisition_types
-    return group
 
 # --- Streamlit App ---
 st.set_page_config(layout="wide")
@@ -222,30 +80,28 @@ with draft_tab:
         st.stop()
 
     # --- Data File Checks and Generation ---
-    data_loading_placeholder = st.empty()  # Create a placeholder for the data loading section
-    with data_loading_placeholder.container():
-        st.subheader("Data Loading & Preparation")
-
-        # Use new modular function for all data file checks and loading
+    with st.spinner("Loading data..."):
         draft_df, stats_df, team_map, schedule_payload = ensure_data_files_exist(
             config,
             DRAFT_RESULTS_FILE,
             PLAYER_STATS_FILE,
             TEAM_MAPPING_FILE,
             TEAM_SCHEDULE_FILE,
-            parse_draft_results,
-            fetch_box_score_stats,
-            fetch_and_save_team_info,
-            fetch_and_save_team_schedule,
-            START_WEEK,
-            END_WEEK,
-            RATE_LIMIT_DELAY,
-            TEAM_INFO_OUTPUT_DIR,
-            TEAM_INFO_OUTPUT_FILE,
-            st=st
         )
-    # If we reach here, all data files are loaded/generated, so clear the section:
-    data_loading_placeholder.empty()
+
+    freshness = get_data_freshness([DRAFT_RESULTS_FILE, PLAYER_STATS_FILE])
+    col_fresh, col_refresh = st.columns([4, 1])
+    with col_fresh:
+        if freshness:
+            st.caption(f"Data last fetched: {freshness}")
+        else:
+            st.caption("Data freshness unknown.")
+    with col_refresh:
+        if st.button("Refresh Data", help="Delete cached files and re-fetch from ESPN API"):
+            for f in [DRAFT_RESULTS_FILE, PLAYER_STATS_FILE, TEAM_MAPPING_FILE, TEAM_SCHEDULE_FILE]:
+                if os.path.exists(f):
+                    os.remove(f)
+            st.rerun()
 
     schedule_df = team_schedule_to_dataframe(schedule_payload)
     schedule_generated_at = None
@@ -255,7 +111,11 @@ with draft_tab:
     # Proceed only if draft and stats data are loaded
     if draft_df is not None and stats_df is not None:
         # --- Data Processing Steps ---
-        final_df, value_df = process_data(draft_df, stats_df, team_map, st=st)
+        try:
+            final_df, value_df = process_data(draft_df, stats_df, team_map, st=st)
+        except Exception as e:
+            st.error(f"Data processing failed: {e}")
+            st.stop()
 
         # --- Display Results ---
         if value_df is not None:
@@ -275,14 +135,14 @@ with draft_tab:
             with col1:
                 st.markdown(f"**Top {N_PICKS_DISPLAY} Best Value Picks**")
                 if not drafted_value_df.empty:
-                     st.dataframe(drafted_value_df.head(N_PICKS_DISPLAY)[display_cols_value], use_container_width=True, hide_index=True)
+                     st.dataframe(drafted_value_df.head(N_PICKS_DISPLAY)[display_cols_value], width='stretch', hide_index=True)
                 else:
                      st.info("No 'drafted' players found.")
 
             with col2:
                 st.markdown(f"**Top {N_PICKS_DISPLAY} Worst Value Picks**")
                 if not drafted_value_df.empty:
-                     st.dataframe(drafted_value_df.tail(N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], use_container_width=True, hide_index=True)
+                     st.dataframe(drafted_value_df.tail(N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], width='stretch', hide_index=True)
                 else:
                      st.info("No 'drafted' players found matching the criteria (including hold duration).")
 
@@ -302,10 +162,10 @@ with draft_tab:
                      col3, col4 = st.columns(2)
                      with col3:
                          st.markdown(f"*Top {TEAM_N_PICKS_DISPLAY} Best Value Picks*")
-                         st.dataframe(team_value_df.head(TEAM_N_PICKS_DISPLAY)[display_cols_value], use_container_width=True, hide_index=True)
+                         st.dataframe(team_value_df.head(TEAM_N_PICKS_DISPLAY)[display_cols_value], width='stretch', hide_index=True)
                      with col4:
                          st.markdown(f"*Top {TEAM_N_PICKS_DISPLAY} Worst Value Picks*")
-                         st.dataframe(team_value_df.tail(TEAM_N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], use_container_width=True, hide_index=True)
+                         st.dataframe(team_value_df.tail(TEAM_N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], width='stretch', hide_index=True)
             else:
                 st.info("No drafting teams found in the data for drafted players.")
 
@@ -322,14 +182,13 @@ with draft_tab:
                 # Get unique players acquired via waiver, include their original Team
                 unique_waiver_players = waiver_records_df[['Player','Pos', 'TeamPoints', 'PickupTeamName','FirstWeek','LastWeek']].drop_duplicates(subset=['Player'])
 
-                unique_waiver_players['Duration'] = unique_waiver_players['LastWeek'] - unique_waiver_players['FirstWeek'] #calculate duration
-                unique_waiver_players['AvgPointsPerWeek'] = unique_waiver_players['TeamPoints'] / unique_waiver_players['Duration'] #calculate average points per week
+                unique_waiver_players = compute_duration_and_avg(unique_waiver_players)
 
                 # Sort them by TeamPoints
                 top_overall_acquisitions = unique_waiver_players.sort_values(by='TeamPoints', ascending=False)
                 # Display
                 display_cols_overall_acq = ['Player','Pos', 'PickupTeamName', 'TeamPoints', 'AvgPointsPerWeek', 'Duration']
-                st.dataframe(top_overall_acquisitions.head(N_PICKS_DISPLAY)[display_cols_overall_acq], hide_index=True, use_container_width=True)
+                st.dataframe(top_overall_acquisitions.head(N_PICKS_DISPLAY)[display_cols_overall_acq], hide_index=True, width='stretch')
             else:
                 st.info("No waiver/trade acquisitions found.")
 
@@ -338,19 +197,18 @@ with draft_tab:
             st.markdown("_Players acquired via waiver/trade by each team, ranked by points scored *for that specific team* after acquisition._")
             if not waiver_records_df.empty:
                 # Get acquiring teams
-                acquiring_teams = sorted(waiver_records_df['team_abbrev'].dropna().unique())
+                acquiring_teams = get_acquiring_teams(waiver_records_df)
                 if acquiring_teams:
                     selected_acq_team = st.selectbox('Select Acquiring Team:', acquiring_teams)
                     if selected_acq_team:
-                        team_acquisitions_df = waiver_records_df[waiver_records_df['team_abbrev'] == selected_acq_team].copy()
+                        team_acquisitions_df = waiver_records_df[waiver_records_df['PickupTeamName'] == selected_acq_team].copy()
 
-                        team_acquisitions_df['Duration'] = team_acquisitions_df['LastWeek'] - team_acquisitions_df['FirstWeek'] #calculate duration
-                        team_acquisitions_df['AvgPointsPerWeek'] = team_acquisitions_df['TeamPoints'] / team_acquisitions_df['Duration'] #calculate average points per week
+                        team_acquisitions_df = compute_duration_and_avg(team_acquisitions_df)
                         # Sort by points scored for *this* team
                         team_acquisitions_df = team_acquisitions_df.sort_values(by='TeamPoints', ascending=False)
                         st.markdown(f"**Top {N_PICKS_DISPLAY} Acquisitions for {selected_acq_team} (by Points for Team)**")
                         display_cols_team_acq = ['Player','Pos', 'TeamPoints', 'AvgPointsPerWeek', 'Duration'] # Show points for team and duration
-                        st.dataframe(team_acquisitions_df.head(N_PICKS_DISPLAY)[display_cols_team_acq], hide_index=True, use_container_width=True)
+                        st.dataframe(team_acquisitions_df.head(N_PICKS_DISPLAY)[display_cols_team_acq], hide_index=True, width='stretch')
                 else:
                     st.info("No teams found who made waiver/trade acquisitions.")
             else:
@@ -369,8 +227,16 @@ with draft_tab:
                 ]
                 # Add any remaining columns automatically
                 remaining_cols = [col for col in value_df.columns if col not in all_cols_ordered]
-                # Display using the final value_df
-                st.dataframe(value_df[all_cols_ordered + remaining_cols], use_container_width=True, hide_index=True)
+                display_df = value_df[all_cols_ordered + remaining_cols].rename(columns={
+                    'team_abbrev': 'Current Team',
+                    'acquisition_type': 'How Acquired',
+                    'DraftingTeamAbbrev': 'Drafted By (Abbrev)',
+                    'TeamPoints': 'Points (This Team)',
+                    'TotalPoints': 'Season Total Points',
+                    'FirstWeek': 'First Week',
+                    'LastWeek': 'Last Week',
+                })
+                st.dataframe(display_df, width='stretch', hide_index=True)
 
     elif draft_df is None:
          st.warning("Draft data could not be loaded. Cannot display dashboard.")
@@ -473,8 +339,8 @@ with team_tab:
                 if recent_table.empty:
                     st.info("No matchups have been completed yet.")
                 else:
-                    st.dataframe(recent_table, use_container_width=True, hide_index=True)
+                    st.dataframe(recent_table, width='stretch', hide_index=True)
 
                 with st.expander("Full Schedule"):
                     full_table = format_schedule_table(filtered_df)
-                    st.dataframe(full_table, use_container_width=True, hide_index=True)
+                    st.dataframe(full_table, width='stretch', hide_index=True)
