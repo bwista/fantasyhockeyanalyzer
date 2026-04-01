@@ -362,7 +362,7 @@ def process_data(draft_df, stats_df, team_map, st=None):
             on='name', how='left'
         )
         # Acquisition type
-        final_team_stats_df = merged_team_stats.groupby('name', group_keys=False).apply(determine_acquisition_type)
+        final_team_stats_df = merged_team_stats.groupby('name', group_keys=True).apply(determine_acquisition_type).reset_index(level='name')
         # Merge with overall stats
         final_df = pd.merge(
             final_team_stats_df,
