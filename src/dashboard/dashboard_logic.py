@@ -656,3 +656,51 @@ def get_scoring_categories(stats_df: pd.DataFrame) -> list:
     return sorted(nonzero_keys)
 
 
+def get_top_contributors(
+    stats_df: pd.DataFrame,
+    team_abbrev: str,
+    start_week: int,
+    end_week: int,
+    scoring_categories: list,
+    top_n: int = 5,
+) -> pd.DataFrame:
+    """Return top N contributors for a team within a week range, with aggregated raw stats."""
+    if stats_df is None or stats_df.empty:
+        return pd.DataFrame()
+
+    filtered = stats_df[
+        (stats_df['team_abbrev'] == team_abbrev)
+        & (stats_df['week'] >= start_week)
+        & (stats_df['week'] <= end_week)
+    ].copy()
+
+    if filtered.empty:
+        return pd.DataFrame()
+
+    # Expand raw stats dict into columns for each scoring category
+    for cat in scoring_categories:
+        filtered[cat] = filtered['stats'].apply(lambda s, c=cat: s.get(c, 0.0) if isinstance(s, dict) else 0.0)
+
+    # Group by player, sum points and raw stat counts
+    agg_dict = {'total_points': 'sum'}
+    for cat in scoring_categories:
+        agg_dict[cat] = 'sum'
+
+    grouped = (
+        filtered.groupby(['name', 'position'])
+        .agg(agg_dict)
+        .reset_index()
+        .sort_values('total_points', ascending=False)
+        .head(top_n)
+    )
+
+    # Map position to short form
+    position_map = {
+        'Left Wing': 'F', 'Right Wing': 'F', 'Center': 'F',
+        'Defense': 'D', 'Goalie': 'G',
+    }
+    grouped['position'] = grouped['position'].replace(position_map)
+
+    grouped.rename(columns={'name': 'Player', 'position': 'Pos', 'total_points': 'TotalPoints'}, inplace=True)
+
+    return grouped.reset_index(drop=True)
