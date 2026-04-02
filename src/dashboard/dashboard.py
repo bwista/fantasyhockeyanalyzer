@@ -20,7 +20,8 @@ if PROJECT_ROOT not in sys.path:
 # Add import for new logic module
 from src.dashboard.dashboard_logic import (
     ensure_data_files_exist, process_data, plot_draft_value, team_schedule_to_dataframe,
-    plot_matchup_scores_by_period, compute_duration_and_avg, get_acquiring_teams, get_data_freshness
+    plot_matchup_scores_by_period, compute_duration_and_avg, get_acquiring_teams, get_data_freshness,
+    get_scoring_categories, get_top_contributors
 )
 
 # Configure logging for dashboard (optional, but good practice)
@@ -340,6 +341,52 @@ with team_tab:
                     st.info("No matchups have been completed yet.")
                 else:
                     st.dataframe(recent_table, width='stretch', hide_index=True)
+
+                # --- Top Contributors ---
+                st.subheader("Top Contributors")
+                if stats_df is not None and team_map is not None:
+                    selected_abbrev = team_map.get(selected_team_name)
+
+                    if selected_abbrev:
+                        scoring_cats = get_scoring_categories(stats_df)
+                        contributors_df = get_top_contributors(
+                            stats_df, selected_abbrev, start_period, end_period,
+                            scoring_cats, top_n=5
+                        )
+
+                        if not contributors_df.empty:
+                            # MVP highlight card
+                            mvp = contributors_df.iloc[0]
+                            period_label = (
+                                f"Week {start_period}" if start_period == end_period
+                                else f"Weeks {start_period}-{end_period}"
+                            )
+                            stat_line = "  ".join(
+                                f"{mvp[cat]:.0f}{cat}" if mvp[cat] == int(mvp[cat])
+                                else f"{mvp[cat]:.1f}{cat}"
+                                for cat in scoring_cats if cat in mvp.index
+                            )
+                            st.markdown(
+                                f"**Top Contributor ({period_label})**\n\n"
+                                f"### {mvp['Player']} ({mvp['Pos']}) — {mvp['TotalPoints']:.1f} pts\n\n"
+                                f"`{stat_line}`"
+                            )
+
+                            # Leaderboard table
+                            display_cols = ['Player', 'Pos', 'TotalPoints'] + [
+                                c for c in scoring_cats if c in contributors_df.columns
+                            ]
+                            st.dataframe(
+                                contributors_df[display_cols],
+                                hide_index=True,
+                                width='stretch',
+                            )
+                        else:
+                            st.info("No player stats available for the selected filters.")
+                    else:
+                        st.info("Could not map team name to abbreviation.")
+                else:
+                    st.info("Player stats data not available for top contributors.")
 
                 with st.expander("Full Schedule"):
                     full_table = format_schedule_table(filtered_df)
