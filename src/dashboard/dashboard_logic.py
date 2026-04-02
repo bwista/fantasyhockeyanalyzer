@@ -353,7 +353,7 @@ def process_data(draft_df, stats_df, team_map, st=None):
             on='name', how='left'
         )
         # Acquisition type
-        final_team_stats_df = merged_team_stats.groupby('name', group_keys=True).apply(determine_acquisition_type).reset_index(level='name')
+        final_team_stats_df = merged_team_stats.groupby('name', group_keys=False).apply(determine_acquisition_type).reset_index(drop=True)
         # Merge with overall stats
         final_df = pd.merge(
             final_team_stats_df,
@@ -577,7 +577,7 @@ def plot_draft_value(value_df, st):
     )
 
     with plot_col:
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
 
 
 def plot_matchup_scores_by_period(schedule_df: pd.DataFrame, selected_team_name: str, st=None):
@@ -633,7 +633,7 @@ def plot_matchup_scores_by_period(schedule_df: pd.DataFrame, selected_team_name:
         uniformtext_mode='hide'
     )
 
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
 
 # Additional display/plotting functions can be added here as needed.

@@ -136,14 +136,14 @@ with draft_tab:
             with col1:
                 st.markdown(f"**Top {N_PICKS_DISPLAY} Best Value Picks**")
                 if not drafted_value_df.empty:
-                     st.dataframe(drafted_value_df.head(N_PICKS_DISPLAY)[display_cols_value], width='stretch', hide_index=True)
+                     st.dataframe(drafted_value_df.head(N_PICKS_DISPLAY)[display_cols_value], use_container_width=True, hide_index=True)
                 else:
                      st.info("No 'drafted' players found.")
 
             with col2:
                 st.markdown(f"**Top {N_PICKS_DISPLAY} Worst Value Picks**")
                 if not drafted_value_df.empty:
-                     st.dataframe(drafted_value_df.tail(N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], width='stretch', hide_index=True)
+                     st.dataframe(drafted_value_df.tail(N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], use_container_width=True, hide_index=True)
                 else:
                      st.info("No 'drafted' players found matching the criteria (including hold duration).")
 
@@ -163,10 +163,10 @@ with draft_tab:
                      col3, col4 = st.columns(2)
                      with col3:
                          st.markdown(f"*Top {TEAM_N_PICKS_DISPLAY} Best Value Picks*")
-                         st.dataframe(team_value_df.head(TEAM_N_PICKS_DISPLAY)[display_cols_value], width='stretch', hide_index=True)
+                         st.dataframe(team_value_df.head(TEAM_N_PICKS_DISPLAY)[display_cols_value], use_container_width=True, hide_index=True)
                      with col4:
                          st.markdown(f"*Top {TEAM_N_PICKS_DISPLAY} Worst Value Picks*")
-                         st.dataframe(team_value_df.tail(TEAM_N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], width='stretch', hide_index=True)
+                         st.dataframe(team_value_df.tail(TEAM_N_PICKS_DISPLAY).sort_values(by='ValueScore', ascending=True)[display_cols_value], use_container_width=True, hide_index=True)
             else:
                 st.info("No drafting teams found in the data for drafted players.")
 
@@ -189,7 +189,7 @@ with draft_tab:
                 top_overall_acquisitions = unique_waiver_players.sort_values(by='TeamPoints', ascending=False)
                 # Display
                 display_cols_overall_acq = ['Player','Pos', 'PickupTeamName', 'TeamPoints', 'AvgPointsPerWeek', 'Duration']
-                st.dataframe(top_overall_acquisitions.head(N_PICKS_DISPLAY)[display_cols_overall_acq], hide_index=True, width='stretch')
+                st.dataframe(top_overall_acquisitions.head(N_PICKS_DISPLAY)[display_cols_overall_acq], hide_index=True, use_container_width=True)
             else:
                 st.info("No waiver/trade acquisitions found.")
 
@@ -209,7 +209,7 @@ with draft_tab:
                         team_acquisitions_df = team_acquisitions_df.sort_values(by='TeamPoints', ascending=False)
                         st.markdown(f"**Top {N_PICKS_DISPLAY} Acquisitions for {selected_acq_team} (by Points for Team)**")
                         display_cols_team_acq = ['Player','Pos', 'TeamPoints', 'AvgPointsPerWeek', 'Duration'] # Show points for team and duration
-                        st.dataframe(team_acquisitions_df.head(N_PICKS_DISPLAY)[display_cols_team_acq], hide_index=True, width='stretch')
+                        st.dataframe(team_acquisitions_df.head(N_PICKS_DISPLAY)[display_cols_team_acq], hide_index=True, use_container_width=True)
                 else:
                     st.info("No teams found who made waiver/trade acquisitions.")
             else:
@@ -237,7 +237,7 @@ with draft_tab:
                     'FirstWeek': 'First Week',
                     'LastWeek': 'Last Week',
                 })
-                st.dataframe(display_df, width='stretch', hide_index=True)
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
 
     elif draft_df is None:
          st.warning("Draft data could not be loaded. Cannot display dashboard.")
@@ -340,7 +340,7 @@ with team_tab:
                 if recent_table.empty:
                     st.info("No matchups have been completed yet.")
                 else:
-                    st.dataframe(recent_table, width='stretch', hide_index=True)
+                    st.dataframe(recent_table, use_container_width=True, hide_index=True)
 
                 # --- Top Contributors ---
                 st.subheader("Top Contributors")
@@ -364,7 +364,7 @@ with team_tab:
                             stat_line = "  ".join(
                                 f"{mvp[cat]:.0f}{cat}" if mvp[cat] == int(mvp[cat])
                                 else f"{mvp[cat]:.1f}{cat}"
-                                for cat in scoring_cats if cat in mvp.index
+                                for cat in scoring_cats if cat in mvp.index and mvp[cat] != 0
                             )
                             st.markdown(
                                 f"**Top Contributor ({period_label})**\n\n"
@@ -379,7 +379,7 @@ with team_tab:
                             st.dataframe(
                                 contributors_df[display_cols],
                                 hide_index=True,
-                                width='stretch',
+                                use_container_width=True,
                             )
                         else:
                             st.info("No player stats available for the selected filters.")
@@ -390,4 +390,4 @@ with team_tab:
 
                 with st.expander("Full Schedule"):
                     full_table = format_schedule_table(filtered_df)
-                    st.dataframe(full_table, width='stretch', hide_index=True)
+                    st.dataframe(full_table, use_container_width=True, hide_index=True)
