@@ -2,7 +2,7 @@ import os
 import tempfile
 import pandas as pd
 import pytest
-from src.dashboard.dashboard_logic import compute_duration_and_avg, process_data, get_data_freshness
+from src.dashboard.dashboard_logic import compute_duration_and_avg, process_data, get_data_freshness, get_scoring_categories
 
 
 def test_duration_includes_both_endpoints():
@@ -56,6 +56,25 @@ def test_get_data_freshness_returns_string_for_existing_file():
         assert 'UTC' in result
     finally:
         os.unlink(path)
+
+
+def test_get_scoring_categories_returns_nonzero_keys():
+    """Only stat categories with non-zero fantasy point values are returned."""
+    stats_df = pd.DataFrame({
+        'points_breakdown': [
+            {'G': 2.0, 'A': 4.0, 'PPP': 0.0, 'HIT': 0.5},
+            {'G': 0.0, 'A': 2.0, 'PPP': 1.0, 'HIT': 0.0},
+        ]
+    })
+    result = get_scoring_categories(stats_df)
+    assert result == ['A', 'G', 'HIT', 'PPP']
+
+
+def test_get_scoring_categories_empty_df():
+    """Empty DataFrame returns empty list."""
+    stats_df = pd.DataFrame({'points_breakdown': []})
+    result = get_scoring_categories(stats_df)
+    assert result == []
 
 
 def test_process_data_raises_on_bad_stats_schema():

@@ -643,3 +643,16 @@ def get_acquiring_teams(waiver_df: pd.DataFrame) -> list:
     return sorted(waiver_df['PickupTeamName'].dropna().unique().tolist())
 
 
+def get_scoring_categories(stats_df: pd.DataFrame) -> list:
+    """Return sorted list of stat keys that have non-zero fantasy point values across the dataset."""
+    if stats_df is None or stats_df.empty or 'points_breakdown' not in stats_df.columns:
+        return []
+    nonzero_keys = set()
+    for pb in stats_df['points_breakdown'].dropna():
+        if isinstance(pb, dict):
+            for key, val in pb.items():
+                if val != 0:
+                    nonzero_keys.add(key)
+    return sorted(nonzero_keys)
+
+
