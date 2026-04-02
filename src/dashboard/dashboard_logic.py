@@ -352,8 +352,18 @@ def process_data(draft_df, stats_df, team_map, st=None):
             draft_prepared_df[['name', 'DraftPick', 'DraftingTeamAbbrev', 'DraftingTeamName']],
             on='name', how='left'
         )
-        # Acquisition type
-        final_team_stats_df = merged_team_stats.groupby('name', group_keys=False).apply(determine_acquisition_type).reset_index(drop=True)
+        # Acquisition type — vectorized to avoid groupby().apply() pandas compat issues
+        merged_team_stats = merged_team_stats.sort_values(['name', 'FirstWeek'])
+        # Mark the first stint per player
+        is_first_stint = ~merged_team_stats['name'].duplicated(keep='first')
+        # A player's first stint is 'drafted' if they have a draft pick and their team matches
+        is_drafted = (
+            is_first_stint
+            & merged_team_stats['DraftPick'].notna()
+            & (merged_team_stats['team_abbrev'] == merged_team_stats['DraftingTeamAbbrev'])
+        )
+        merged_team_stats['acquisition_type'] = np.where(is_drafted, 'drafted', 'waiver')
+        final_team_stats_df = merged_team_stats.reset_index(drop=True)
         # Merge with overall stats
         final_df = pd.merge(
             final_team_stats_df,
@@ -378,17 +388,6 @@ def process_data(draft_df, stats_df, team_map, st=None):
             st.error(f"Error during data processing: {e}")
         raise
 
-def determine_acquisition_type(group):
-    group = group.sort_values('FirstWeek')
-    acquisition_types = []
-    for i, row in group.iterrows():
-        current_type = 'waiver'
-        if i == group.index[0]:
-            if pd.notna(row['DraftPick']) and row['team_abbrev'] == row['DraftingTeamAbbrev']:
-                current_type = 'drafted'
-        acquisition_types.append(current_type)
-    group['acquisition_type'] = acquisition_types
-    return group
 
 def calculate_value(df, points_col):
     if df is None or df.empty:
