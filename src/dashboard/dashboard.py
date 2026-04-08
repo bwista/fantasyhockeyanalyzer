@@ -21,7 +21,8 @@ if PROJECT_ROOT not in sys.path:
 from src.dashboard.dashboard_logic import (
     ensure_data_files_exist, process_data, plot_draft_value, team_schedule_to_dataframe,
     plot_matchup_scores_by_period, compute_duration_and_avg, get_acquiring_teams, get_data_freshness,
-    get_scoring_categories, get_top_contributors
+    get_scoring_categories, get_top_contributors,
+    compute_standings, compute_all_play_record,
 )
 
 # Configure logging for dashboard (optional, but good practice)
@@ -42,73 +43,73 @@ N_PICKS_DISPLAY = 10 # Number of best/worst picks to show
 st.set_page_config(layout="wide")
 st.header('🏒 Fantasy Hockey Season Analysis')
 
-# --- Create Tabs ---
-draft_tab, team_tab = st.tabs(["📊 Draft", "🏒 Team"])
+# --- Load User Configuration from Streamlit Secrets ---
+config_placeholder = st.empty()  # Create a placeholder for the config section
+with config_placeholder.container():
+    st.subheader("Configuration")
+    try:
+        # Extract essential config values from st.secrets
+        league_id = st.secrets["LEAGUE_ID"]
+        year = st.secrets["YEAR"]
+        swid = st.secrets["SWID"]
+        espn_s2 = st.secrets["ESPN_S2"]
 
-with draft_tab:
-    # --- Load User Configuration from Streamlit Secrets ---
-    config_placeholder = st.empty()  # Create a placeholder for the config section
-    with config_placeholder.container():
-        st.subheader("Configuration")
-        try:
-            # Extract essential config values from st.secrets
-            league_id = st.secrets["LEAGUE_ID"]
-            year = st.secrets["YEAR"]
-            swid = st.secrets["SWID"]
-            espn_s2 = st.secrets["ESPN_S2"]
-            
-            # Create config dict for compatibility with existing code
-            config = {
-                'LEAGUE_ID': league_id,
-                'YEAR': year,
-                'SWID': swid,
-                'ESPN_S2': espn_s2
-            }
-            
-            st.success("Loaded configuration from Streamlit secrets")
-        except KeyError as e:
-            st.error(f"ERROR: Missing required secret: {e}. Please check your secrets configuration.")
-            st.stop()
-        except Exception as e:
-            st.error(f"ERROR: An unexpected error occurred loading secrets: {e}")
-            st.stop()
+        # Create config dict for compatibility with existing code
+        config = {
+            'LEAGUE_ID': league_id,
+            'YEAR': year,
+            'SWID': swid,
+            'ESPN_S2': espn_s2
+        }
 
-    # If we reach here, config is loaded and valid, so clear the section:
-    config_placeholder.empty()
-
-    if not all([league_id, year, swid, espn_s2]):
-        st.error("ERROR: Configuration file is missing one or more required keys: LEAGUE_ID, YEAR, SWID, ESPN_S2.")
+        st.success("Loaded configuration from Streamlit secrets")
+    except KeyError as e:
+        st.error(f"ERROR: Missing required secret: {e}. Please check your secrets configuration.")
+        st.stop()
+    except Exception as e:
+        st.error(f"ERROR: An unexpected error occurred loading secrets: {e}")
         st.stop()
 
-    # --- Data File Checks and Generation ---
-    with st.spinner("Loading data..."):
-        draft_df, stats_df, team_map, schedule_payload = ensure_data_files_exist(
-            config,
-            DRAFT_RESULTS_FILE,
-            PLAYER_STATS_FILE,
-            TEAM_MAPPING_FILE,
-            TEAM_SCHEDULE_FILE,
-        )
+# If we reach here, config is loaded and valid, so clear the section:
+config_placeholder.empty()
 
-    freshness = get_data_freshness([DRAFT_RESULTS_FILE, PLAYER_STATS_FILE])
-    col_fresh, col_refresh = st.columns([4, 1])
-    with col_fresh:
-        if freshness:
-            st.caption(f"Data last fetched: {freshness}")
-        else:
-            st.caption("Data freshness unknown.")
-    with col_refresh:
-        if st.button("Refresh Data", help="Delete cached files and re-fetch from ESPN API"):
-            for f in [DRAFT_RESULTS_FILE, PLAYER_STATS_FILE, TEAM_MAPPING_FILE, TEAM_SCHEDULE_FILE]:
-                if os.path.exists(f):
-                    os.remove(f)
-            st.rerun()
+if not all([league_id, year, swid, espn_s2]):
+    st.error("ERROR: Configuration file is missing one or more required keys: LEAGUE_ID, YEAR, SWID, ESPN_S2.")
+    st.stop()
 
-    schedule_df = team_schedule_to_dataframe(schedule_payload)
-    schedule_generated_at = None
-    if schedule_df is not None and not schedule_df.empty:
-        schedule_generated_at = schedule_df['generatedAt'].dropna().max()
+# --- Data File Checks and Generation ---
+with st.spinner("Loading data..."):
+    draft_df, stats_df, team_map, schedule_payload = ensure_data_files_exist(
+        config,
+        DRAFT_RESULTS_FILE,
+        PLAYER_STATS_FILE,
+        TEAM_MAPPING_FILE,
+        TEAM_SCHEDULE_FILE,
+    )
 
+freshness = get_data_freshness([DRAFT_RESULTS_FILE, PLAYER_STATS_FILE])
+col_fresh, col_refresh = st.columns([4, 1])
+with col_fresh:
+    if freshness:
+        st.caption(f"Data last fetched: {freshness}")
+    else:
+        st.caption("Data freshness unknown.")
+with col_refresh:
+    if st.button("Refresh Data", help="Delete cached files and re-fetch from ESPN API"):
+        for f in [DRAFT_RESULTS_FILE, PLAYER_STATS_FILE, TEAM_MAPPING_FILE, TEAM_SCHEDULE_FILE]:
+            if os.path.exists(f):
+                os.remove(f)
+        st.rerun()
+
+schedule_df = team_schedule_to_dataframe(schedule_payload)
+schedule_generated_at = None
+if schedule_df is not None and not schedule_df.empty:
+    schedule_generated_at = schedule_df['generatedAt'].dropna().max()
+
+# --- Create Tabs ---
+draft_tab, standings_tab, team_tab = st.tabs(["📊 Draft", "🏆 Standings", "🏒 Team"])
+
+with draft_tab:
     # Proceed only if draft and stats data are loaded
     if draft_df is not None and stats_df is not None:
         # --- Data Processing Steps ---
