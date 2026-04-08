@@ -1,0 +1,11 @@
+{
+  "planPath": "docs/superpowers/plans/2026-04-07-league-standings.md",
+  "tasks": [
+    {"id": 1, "subject": "Task 1: Add compute_standings with tests", "status": "pending"},
+    {"id": 2, "subject": "Task 2: Add compute_all_play_record with tests", "status": "pending", "blockedBy": [1]},
+    {"id": 3, "subject": "Task 3: Hoist shared data loading in dashboard.py", "status": "pending", "blockedBy": [2]},
+    {"id": 4, "subject": "Task 4: Build the standings tab UI", "status": "pending", "blockedBy": [3]},
+    {"id": 5, "subject": "Task 5: Full test suite and final verification", "status": "pending", "blockedBy": [4]}
+  ],
+  "lastUpdated": "2026-04-07T00:00:00Z"
+}

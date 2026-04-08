@@ -63,9 +63,9 @@ If filtering yields zero completed matchups, display `st.info("No completed matc
 
 ### `dashboard_logic.py`
 - `compute_standings(schedule_df: pd.DataFrame) -> pd.DataFrame` — receives pre-filtered DataFrame, aggregates W-L-T, PF, PA, Diff per team
-- `compute_all_play_record(schedule_df: pd.DataFrame) -> pd.DataFrame` — receives pre-filtered DataFrame, computes all-play W-L per team across matchup periods. Returns DataFrame with columns: `teamName`, `AP_W`, `AP_L`, `AP_T`
+- `compute_all_play_record(schedule_df: pd.DataFrame) -> pd.DataFrame` — receives pre-filtered DataFrame, computes all-play W-L per team across matchup periods. Returns DataFrame with columns: `Team`, `AP_W`, `AP_L`, `AP_T`
 
-The standings tab merges the two results on `teamName` before display.
+The standings tab merges the two results on `Team` before display. Both functions rename `teamName` to `Team` internally for display-friendly output.
 
 ### `dashboard.py`
 
