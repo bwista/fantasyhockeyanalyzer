@@ -11,6 +11,10 @@ Add a new "Standings" tab to the Fantasy Hockey dashboard showing league-wide st
 - Toggle to include/exclude playoff matchups (default: exclude)
 - All data sourced from existing `schedule_df` — no new API calls or data files
 
+## Data Shape
+
+`schedule_df` contains one row per team per matchup period (from that team's perspective). An 8-team league with 24 periods produces 192 rows. Each matchup appears twice (once per team). Use `teamScore` directly per team row — do not merge home/away pairs or you will double-count.
+
 ## Standings Table
 
 | Column | Description | Source |
@@ -24,7 +28,7 @@ Add a new "Standings" tab to the Fantasy Hockey dashboard showing league-wide st
 | Diff | Point Differential | PF - PA |
 | All-Play | All-Play Record | See calculation below |
 
-**Sorting:** Primary by W descending, tiebreaker by PF descending.
+**Sorting:** Primary by W descending, tiebreaker by PF descending, then Diff descending.
 
 ## All-Play Calculation
 
@@ -35,26 +39,56 @@ For each completed matchup period:
 
 Displayed as a "W-L" string (e.g., "152-34") or "W-L-T" if ties exist.
 
+## Pre-Filtering
+
+Both logic functions receive a **pre-filtered** DataFrame from the dashboard layer. Before passing `schedule_df` to the logic functions, the dashboard applies:
+1. `isCompleted == True` — exclude future/in-progress matchups
+2. `isBye == False` — exclude BYE weeks (no opponent score to compare)
+3. `isPlayoff` filter — based on the user's toggle state
+
+This is consistent with the existing Team tab pattern (filter first, then pass to logic functions).
+
+## Empty State
+
+If filtering yields zero completed matchups, display `st.info("No completed matchups for the selected filter.")` and skip the metric cards and table entirely.
+
 ## Layout (top to bottom)
 
 1. **Header:** "League Standings"
 2. **Toggle:** Checkbox "Include playoff matchups" (default off)
-3. **Metric cards:** 3x `st.metric` — league leader in PF, best All-Play record, biggest point differential
-4. **Standings table:** `st.dataframe` with all columns
+3. **Metric cards:** 3x `st.metric` — league leader in PF, best All-Play record (by all-play win count), biggest point differential
+4. **Standings table:** `st.dataframe` with all columns, `use_container_width=True`, `hide_index=True`. PF/PA/Diff formatted to 1 decimal place.
 
 ## File Changes
 
 ### `dashboard_logic.py`
-- `compute_standings(schedule_df: pd.DataFrame) -> pd.DataFrame` — aggregates W-L-T, PF, PA, Diff per team
-- `compute_all_play_record(schedule_df: pd.DataFrame) -> pd.DataFrame` — computes all-play W-L per team across matchup periods
+- `compute_standings(schedule_df: pd.DataFrame) -> pd.DataFrame` — receives pre-filtered DataFrame, aggregates W-L-T, PF, PA, Diff per team
+- `compute_all_play_record(schedule_df: pd.DataFrame) -> pd.DataFrame` — receives pre-filtered DataFrame, computes all-play W-L per team across matchup periods. Returns DataFrame with columns: `teamName`, `AP_W`, `AP_L`, `AP_T`
+
+The standings tab merges the two results on `teamName` before display.
 
 ### `dashboard.py`
-1. Hoist data loading (`ensure_data_files_exist`, freshness row, refresh button) above tab definitions so all tabs share the data
-2. Add `standings_tab` between `draft_tab` and `team_tab`
-3. Standings tab calls the two new logic functions and renders the layout above
+
+**What moves above tabs:**
+- Configuration loading (`st.secrets`, config dict, `st.stop()` guards) — renders above tabs as app-level setup
+- `ensure_data_files_exist()` call and the spinner wrapping it
+- Data freshness row and refresh button
+- `schedule_df = team_schedule_to_dataframe(schedule_payload)` and `schedule_generated_at` computation
+
+**What stays inside `draft_tab`:**
+- `process_data()` call and its error guards (only needed by Draft tab)
+- All draft-specific rendering (scatter plot, value tables, waiver analysis)
+
+**What stays inside `team_tab`:**
+- Team-specific filters, metrics, charts, and schedule rendering (unchanged)
+
+**New:**
+- Tab unpacking: `draft_tab, standings_tab, team_tab = st.tabs([...])`
+- `with standings_tab:` block implementing the layout above
 
 ### `tests/test_dashboard_logic.py`
-- Tests for `compute_standings` and `compute_all_play_record` with synthetic schedule data
+- `compute_standings`: basic W-L-T aggregation with known data, empty DataFrame input
+- `compute_all_play_record`: 3-team 2-period scenario verifiable by hand, empty DataFrame, tied scores between teams in a period
 
 ## No New Dependencies
 
