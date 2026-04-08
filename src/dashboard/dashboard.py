@@ -284,7 +284,8 @@ with standings_tab:
 
             m1, m2, m3 = st.columns(3)
             m1.metric("Most Points For", f"{best_pf['PF']:.1f}", delta=best_pf['Team'])
-            m2.metric("Best All-Play", f"{best_ap['AP_W']}-{best_ap['AP_L']}", delta=best_ap['Team'])
+            ap_label = f"{best_ap['AP_W']}-{best_ap['AP_L']}" + (f"-{best_ap['AP_T']}" if best_ap['AP_T'] > 0 else "")
+            m2.metric("Best All-Play", ap_label, delta=best_ap['Team'])
             m3.metric("Best Pt Diff", f"{best_diff['Diff']:+.1f}", delta=best_diff['Team'])
 
             # Standings table
