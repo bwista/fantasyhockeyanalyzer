@@ -2,7 +2,7 @@ import os
 import tempfile
 import pandas as pd
 import pytest
-from src.dashboard.dashboard_logic import compute_duration_and_avg, process_data, get_data_freshness, get_scoring_categories, get_top_contributors
+from src.dashboard.dashboard_logic import compute_duration_and_avg, process_data, get_data_freshness, get_scoring_categories, get_top_contributors, compute_standings
 
 
 def test_duration_includes_both_endpoints():
@@ -165,3 +165,56 @@ def test_process_data_raises_on_bad_stats_schema():
 
     with pytest.raises((KeyError, ValueError)):
         process_data(draft_df, bad_stats_df, None)  # positional None for team_map
+
+
+def test_compute_standings_basic():
+    """Aggregates W-L-T, PF, PA, Diff per team from completed matchups."""
+    df = pd.DataFrame({
+        'teamName': ['Alpha', 'Alpha', 'Beta', 'Beta'],
+        'result': ['W', 'L', 'L', 'W'],
+        'teamScore': [120.0, 90.0, 80.0, 110.0],
+        'opponentScore': [80.0, 110.0, 120.0, 90.0],
+    })
+    result = compute_standings(df)
+    alpha = result[result['Team'] == 'Alpha'].iloc[0]
+    assert alpha['W'] == 1
+    assert alpha['L'] == 1
+    assert alpha['T'] == 0
+    assert alpha['PF'] == pytest.approx(210.0)
+    assert alpha['PA'] == pytest.approx(190.0)
+    assert alpha['Diff'] == pytest.approx(20.0)
+
+
+def test_compute_standings_with_ties():
+    """Ties are counted correctly."""
+    df = pd.DataFrame({
+        'teamName': ['Alpha', 'Beta'],
+        'result': ['T', 'T'],
+        'teamScore': [100.0, 100.0],
+        'opponentScore': [100.0, 100.0],
+    })
+    result = compute_standings(df)
+    assert result.iloc[0]['T'] == 1
+
+
+def test_compute_standings_sorted_by_wins_then_pf():
+    """Teams sorted by W desc, then PF desc, then Diff desc."""
+    df = pd.DataFrame({
+        'teamName': ['Alpha', 'Alpha', 'Beta', 'Beta', 'Gamma', 'Gamma'],
+        'result': ['W', 'W', 'W', 'L', 'W', 'L'],
+        'teamScore': [100.0, 100.0, 210.0, 50.0, 120.0, 80.0],
+        'opponentScore': [80.0, 80.0, 50.0, 150.0, 80.0, 120.0],
+    })
+    result = compute_standings(df)
+    assert result.iloc[0]['Team'] == 'Alpha'  # 2W, 200 PF
+    assert result.iloc[1]['Team'] == 'Beta'   # 1W, 260 PF (tiebreaker over Gamma)
+    assert result.iloc[2]['Team'] == 'Gamma'  # 1W, 200 PF
+
+
+def test_compute_standings_empty_df():
+    """Empty input returns empty DataFrame with correct columns."""
+    df = pd.DataFrame(columns=['teamName', 'result', 'teamScore', 'opponentScore'])
+    result = compute_standings(df)
+    assert result.empty
+    assert 'Team' in result.columns
+    assert 'W' in result.columns

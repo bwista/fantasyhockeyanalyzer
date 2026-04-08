@@ -703,3 +703,27 @@ def get_top_contributors(
     grouped.rename(columns={'name': 'Player', 'position': 'Pos', 'total_points': 'TotalPoints'}, inplace=True)
 
     return grouped.reset_index(drop=True)
+
+
+def compute_standings(schedule_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aggregate W-L-T, PF, PA, Diff per team from a pre-filtered schedule DataFrame.
+    Expects columns: teamName, result, teamScore, opponentScore.
+    Returns DataFrame sorted by W desc, PF desc, Diff desc.
+    """
+    if schedule_df.empty:
+        return pd.DataFrame(columns=['Team', 'W', 'L', 'T', 'PF', 'PA', 'Diff'])
+
+    grouped = schedule_df.groupby('teamName').agg(
+        W=('result', lambda x: (x == 'W').sum()),
+        L=('result', lambda x: (x == 'L').sum()),
+        T=('result', lambda x: (x == 'T').sum()),
+        PF=('teamScore', 'sum'),
+        PA=('opponentScore', 'sum'),
+    ).reset_index()
+
+    grouped.rename(columns={'teamName': 'Team'}, inplace=True)
+    grouped['Diff'] = grouped['PF'] - grouped['PA']
+    grouped.sort_values(['W', 'PF', 'Diff'], ascending=[False, False, False], inplace=True)
+    grouped.reset_index(drop=True, inplace=True)
+    return grouped
