@@ -727,3 +727,38 @@ def compute_standings(schedule_df: pd.DataFrame) -> pd.DataFrame:
     grouped.sort_values(['W', 'PF', 'Diff'], ascending=[False, False, False], inplace=True)
     grouped.reset_index(drop=True, inplace=True)
     return grouped
+
+
+def compute_all_play_record(schedule_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute all-play W-L-T for each team across matchup periods.
+    For each period, each team is compared against every other team's score.
+    Expects columns: teamName, matchupPeriod, teamScore.
+    Returns DataFrame with columns: Team, AP_W, AP_L, AP_T.
+    """
+    if schedule_df.empty:
+        return pd.DataFrame(columns=['Team', 'AP_W', 'AP_L', 'AP_T'])
+
+    records = []
+    for period, group in schedule_df.groupby('matchupPeriod'):
+        scores = group[['teamName', 'teamScore']].dropna()
+        for _, row in scores.iterrows():
+            team = row['teamName']
+            score = row['teamScore']
+            others = scores[scores['teamName'] != team]['teamScore']
+            records.append({
+                'Team': team,
+                'AP_W': int((others < score).sum()),
+                'AP_L': int((others > score).sum()),
+                'AP_T': int((others == score).sum()),
+            })
+
+    if not records:
+        return pd.DataFrame(columns=['Team', 'AP_W', 'AP_L', 'AP_T'])
+
+    result = pd.DataFrame(records).groupby('Team', as_index=False).agg(
+        AP_W=('AP_W', 'sum'),
+        AP_L=('AP_L', 'sum'),
+        AP_T=('AP_T', 'sum'),
+    )
+    return result

@@ -2,7 +2,7 @@ import os
 import tempfile
 import pandas as pd
 import pytest
-from src.dashboard.dashboard_logic import compute_duration_and_avg, process_data, get_data_freshness, get_scoring_categories, get_top_contributors, compute_standings
+from src.dashboard.dashboard_logic import compute_duration_and_avg, process_data, get_data_freshness, get_scoring_categories, get_top_contributors, compute_standings, compute_all_play_record
 
 
 def test_duration_includes_both_endpoints():
@@ -218,3 +218,54 @@ def test_compute_standings_empty_df():
     assert result.empty
     assert 'Team' in result.columns
     assert 'W' in result.columns
+
+
+def test_compute_all_play_basic():
+    """3 teams, 1 period: highest scorer gets 2 wins, lowest gets 2 losses."""
+    df = pd.DataFrame({
+        'teamName': ['Alpha', 'Beta', 'Gamma'],
+        'matchupPeriod': [1, 1, 1],
+        'teamScore': [100.0, 80.0, 120.0],
+    })
+    result = compute_all_play_record(df)
+    gamma = result[result['Team'] == 'Gamma'].iloc[0]
+    assert gamma['AP_W'] == 2
+    assert gamma['AP_L'] == 0
+    beta = result[result['Team'] == 'Beta'].iloc[0]
+    assert beta['AP_W'] == 0
+    assert beta['AP_L'] == 2
+
+
+def test_compute_all_play_multiple_periods():
+    """All-play wins/losses aggregate across periods."""
+    df = pd.DataFrame({
+        'teamName': ['Alpha', 'Beta', 'Alpha', 'Beta'],
+        'matchupPeriod': [1, 1, 2, 2],
+        'teamScore': [100.0, 80.0, 70.0, 90.0],
+    })
+    result = compute_all_play_record(df)
+    alpha = result[result['Team'] == 'Alpha'].iloc[0]
+    assert alpha['AP_W'] == 1
+    assert alpha['AP_L'] == 1
+
+
+def test_compute_all_play_tied_scores():
+    """Tied scores count as all-play ties."""
+    df = pd.DataFrame({
+        'teamName': ['Alpha', 'Beta'],
+        'matchupPeriod': [1, 1],
+        'teamScore': [100.0, 100.0],
+    })
+    result = compute_all_play_record(df)
+    assert result.iloc[0]['AP_T'] == 1
+    assert result.iloc[0]['AP_W'] == 0
+    assert result.iloc[0]['AP_L'] == 0
+
+
+def test_compute_all_play_empty_df():
+    """Empty input returns empty DataFrame with correct columns."""
+    df = pd.DataFrame(columns=['teamName', 'matchupPeriod', 'teamScore'])
+    result = compute_all_play_record(df)
+    assert result.empty
+    assert 'Team' in result.columns
+    assert 'AP_W' in result.columns
