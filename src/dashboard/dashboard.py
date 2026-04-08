@@ -245,6 +245,58 @@ with draft_tab:
     else: # stats_df is None
          st.warning("Stats data could not be loaded. Cannot perform analysis.") # Added specific message for missing stats
 
+with standings_tab:
+    st.header("League Standings")
+
+    if schedule_df is not None and not schedule_df.empty:
+        include_playoffs_standings = st.checkbox(
+            "Include playoff matchups",
+            value=False,
+            help="Include playoff matchups in standings calculations.",
+            key="standings_include_playoffs",
+        )
+
+        # Pre-filter: completed, non-bye, playoff toggle
+        standings_source = schedule_df[
+            (schedule_df['isCompleted']) & (~schedule_df['isBye'])
+        ].copy()
+        if not include_playoffs_standings:
+            standings_source = standings_source[~standings_source['isPlayoff']]
+
+        if standings_source.empty:
+            st.info("No completed matchups for the selected filter.")
+        else:
+            standings_df = compute_standings(standings_source)
+            all_play_df = compute_all_play_record(standings_source)
+            merged = standings_df.merge(all_play_df, on='Team', how='left')
+            merged['AP_W'] = merged['AP_W'].fillna(0).astype(int)
+            merged['AP_L'] = merged['AP_L'].fillna(0).astype(int)
+            merged['AP_T'] = merged['AP_T'].fillna(0).astype(int)
+            merged['All-Play'] = merged.apply(
+                lambda r: f"{r['AP_W']}-{r['AP_L']}" + (f"-{r['AP_T']}" if r['AP_T'] > 0 else ""),
+                axis=1,
+            )
+
+            # Metric cards
+            best_pf = merged.loc[merged['PF'].idxmax()]
+            best_ap = merged.loc[merged['AP_W'].idxmax()]
+            best_diff = merged.loc[merged['Diff'].idxmax()]
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Most Points For", f"{best_pf['PF']:.1f}", delta=best_pf['Team'])
+            m2.metric("Best All-Play", f"{best_ap['AP_W']}-{best_ap['AP_L']}", delta=best_ap['Team'])
+            m3.metric("Best Pt Diff", f"{best_diff['Diff']:+.1f}", delta=best_diff['Team'])
+
+            # Standings table
+            display_cols = ['Team', 'W', 'L', 'T', 'PF', 'PA', 'Diff', 'All-Play']
+            st.dataframe(
+                merged[display_cols].style.format({'PF': '{:.1f}', 'PA': '{:.1f}', 'Diff': '{:+.1f}'}),
+                use_container_width=True,
+                hide_index=True,
+            )
+    else:
+        st.info("Schedule data is not available.")
+
 with team_tab:
     st.header("Team Analysis")
     if schedule_df is None or schedule_df.empty:
